@@ -1,6 +1,8 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <gdiplus.h>
+#include <shlwapi.h>
 #include <iostream>
 #include <fstream>
 #include <string>
@@ -8,13 +10,21 @@
 #include <iomanip>
 #include <thread>
 #include <chrono>
+#include <atomic>
 
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "gdiplus.lib")
+#pragma comment(lib, "shlwapi.lib")
 
 using namespace std;
+using namespace Gdiplus;
 
 // Global Socket
 SOCKET clientSocket;
+
+// Global streaming control
+atomic<bool> isStreaming(false);
+HWND streamWindow = NULL;
 
 // Network Helper Functions
 void sendLine(const string& s) {
@@ -277,6 +287,176 @@ void applicationMenu() {
     }
 }
 
+// Window Procedure for streaming window
+LRESULT CALLBACK StreamWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+    switch (msg) {
+        case WM_CLOSE:
+            isStreaming = false;
+            DestroyWindow(hwnd);
+            return 0;
+        case WM_DESTROY:
+            streamWindow = NULL;
+            return 0;
+        default:
+            return DefWindowProc(hwnd, msg, wParam, lParam);
+    }
+}
+
+// Register window class for streaming
+void RegisterStreamWindowClass() {
+    static bool registered = false;
+    if (registered) return;
+    
+    WNDCLASSA wc = {};
+    wc.lpfnWndProc = StreamWndProc;
+    wc.hInstance = GetModuleHandle(NULL);
+    wc.lpszClassName = "WebcamStreamClass";
+    wc.hCursor = LoadCursor(NULL, IDC_ARROW);
+    wc.hbrBackground = (HBRUSH)GetStockObject(BLACK_BRUSH);
+    
+    RegisterClassA(&wc);
+    registered = true;
+}
+
+// Display streaming window with frames
+void displayStreamingWindow() {
+    if (!isStreaming) return;
+    
+    // Initialize GDI+
+    GdiplusStartupInput gdiplusStartupInput;
+    ULONG_PTR gdiplusToken;
+    GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+    
+    RegisterStreamWindowClass();
+    
+    // Create window
+    streamWindow = CreateWindowA(
+        "WebcamStreamClass",
+        "Webcam Stream - Press ESC to close",
+        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+        100, 100, 800, 600,
+        NULL, NULL, GetModuleHandle(NULL), NULL
+    );
+    
+    if (!streamWindow) {
+        cout << "Failed to create streaming window!" << endl;
+        GdiplusShutdown(gdiplusToken);
+        isStreaming = false;
+        return;
+    }
+    
+    ShowWindow(streamWindow, SW_SHOW);
+    UpdateWindow(streamWindow);
+    
+    int frameCount = 0;
+    auto startTime = chrono::high_resolution_clock::now();
+    
+    cout << "\n[Streaming] Window opened. Press ESC in window to close.\n";
+    
+    while (isStreaming) {
+        // Check for window messages
+        MSG msg;
+        while (PeekMessage(&msg, streamWindow, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE) {
+                isStreaming = false;
+                break;
+            }
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
+        
+        if (!isStreaming || !streamWindow) break;
+        
+        try {
+            // Receive frame size
+            string sizeStr = receiveLine();
+            if (sizeStr.empty() || sizeStr == "STOPPED") {
+                isStreaming = false;
+                break;
+            }
+            
+            int frameSize = stoi(sizeStr);
+            if (frameSize <= 0 || frameSize > 500000) {
+                this_thread::sleep_for(chrono::milliseconds(10));
+                continue;
+            }
+            
+            // Receive frame data
+            vector<char> frameData(frameSize);
+            int totalReceived = 0;
+            
+            while (totalReceived < frameSize && isStreaming) {
+                int result = recv(clientSocket, frameData.data() + totalReceived, 
+                            frameSize - totalReceived, 0);
+                if (result <= 0) break;
+                totalReceived += result;
+            }
+            
+            if (totalReceived != frameSize) continue;
+            
+            // Create memory stream from JPEG data
+            IStream* pStream = SHCreateMemStream((BYTE*)frameData.data(), frameSize);
+            if (pStream) {
+                Bitmap* bitmap = Bitmap::FromStream(pStream);
+                if (bitmap && bitmap->GetLastStatus() == Ok) {
+                    // Get window client area
+                    RECT rect;
+                    GetClientRect(streamWindow, &rect);
+                    int width = rect.right - rect.left;
+                    int height = rect.bottom - rect.top;
+                    
+                    // Draw to window
+                    HDC hdc = GetDC(streamWindow);
+                    if (hdc) {
+                        Graphics graphics(hdc);
+                        graphics.SetInterpolationMode(InterpolationModeHighQualityBicubic);
+                        graphics.DrawImage(bitmap, 0, 0, width, height);
+                        ReleaseDC(streamWindow, hdc);
+                    }
+                    
+                    delete bitmap;
+                    frameCount++;
+                    
+                    // Calculate and display FPS
+                    if (frameCount % 30 == 0) {
+                        auto currentTime = chrono::high_resolution_clock::now();
+                        auto duration = chrono::duration_cast<chrono::milliseconds>(
+                            currentTime - startTime).count();
+                        double fps = (frameCount * 1000.0) / duration;
+                        
+                        // Update window title with FPS
+                        string title = "Webcam Stream - FPS: " + 
+                                     to_string((int)fps) + 
+                                     " | Frames: " + to_string(frameCount) +
+                                     " - Press ESC to close";
+                        SetWindowTextA(streamWindow, title.c_str());
+                        
+                        cout << "FPS: " << fixed << setprecision(1) << fps 
+                             << " | Frames: " << frameCount << "\r";
+                        cout.flush();
+                    }
+                }
+                pStream->Release();
+            }
+            
+        } catch (...) {
+            continue;
+        }
+        
+        // Small delay to prevent CPU overload
+        this_thread::sleep_for(chrono::milliseconds(1));
+    }
+    
+    cout << "\n[Streaming] Total frames received: " << frameCount << endl;
+    
+    if (streamWindow) {
+        DestroyWindow(streamWindow);
+        streamWindow = NULL;
+    }
+    
+    GdiplusShutdown(gdiplusToken);
+}
+
 // Webcam Streaming
 void webcamMenu() {
     string choice;
@@ -294,80 +474,50 @@ void webcamMenu() {
         cin.ignore();
         
         if (choice == "1") {
+            if (isStreaming) {
+                cout << "Streaming is already running!\n";
+                continue;
+            }
+            
             sendLine("START");
             string response = receiveLine();
             
             if (response == "OK") {
-                cout << "Streaming started! Receiving frames...\n";
-                cout << "Press Ctrl+C or use option 2 to stop.\n";
+                cout << "Streaming started!\n";
+                isStreaming = true;
                 
-                // Create frames directory
-                system("if not exist frames mkdir frames");
+                // Start streaming in a separate thread
+                thread streamThread(displayStreamingWindow);
+                streamThread.detach();
                 
-                int frameCount = 0;
-                auto startTime = chrono::high_resolution_clock::now();
-                
-                // Receive frames in a thread
-                thread receiveThread([&]() {
-                    while (choice == "1") {
-                        try {
-                            // Receive frame size
-                            string sizeStr = receiveLine();
-                            if (sizeStr.empty() || sizeStr == "STOPPED") break;
-                            
-                            unsigned long frameSize = stoul(sizeStr);
-                            if (frameSize == 0 || frameSize > 500000) continue;
-                            
-                            // Receive frame data
-                            vector<char> frameBuffer(frameSize);
-                            unsigned long totalReceived = 0;
-                            
-                            while (totalReceived < frameSize) {
-                                int bytesReceived = recv(clientSocket, frameBuffer.data() + totalReceived, 
-                                                        frameSize - totalReceived, 0);
-                                if (bytesReceived <= 0) break;
-                                totalReceived += bytesReceived;
-                            }
-                            
-                            if (totalReceived == frameSize) {
-                                // Save frame as JPEG
-                                string filename = "frames/frame_" + to_string(frameCount) + ".jpg";
-                                ofstream file(filename, ios::binary);
-                                file.write(frameBuffer.data(), frameSize);
-                                file.close();
-                                
-                                frameCount++;
-                                
-                                // Calculate and display FPS every 30 frames
-                                if (frameCount % 30 == 0) {
-                                    auto currentTime = chrono::high_resolution_clock::now();
-                                    auto duration = chrono::duration_cast<chrono::milliseconds>(currentTime - startTime);
-                                    double fps = (frameCount * 1000.0) / duration.count();
-                                    cout << "Frames: " << frameCount << " | FPS: " << fixed << setprecision(1) << fps << "\r";
-                                    cout.flush();
-                                }
-                            }
-                        } catch (...) {
-                            break;
-                        }
-                    }
-                    cout << "\nTotal frames received: " << frameCount << endl;
-                });
-                
-                receiveThread.detach();
-                
-                cout << "Streaming in progress. Select option 2 to stop.\n";
+                cout << "Streaming window will open shortly...\n";
                 
             } else {
                 cout << response << endl;
             }
             
         } else if (choice == "2") {
+            if (!isStreaming) {
+                cout << "No streaming is running!\n";
+                continue;
+            }
+            
+            isStreaming = false;
             sendLine("STOP");
             string response = receiveLine();
             cout << response << endl;
             
+            // Wait a bit for window to close
+            this_thread::sleep_for(chrono::milliseconds(500));
+            
         } else if (choice == "0") {
+            if (isStreaming) {
+                cout << "Stopping streaming first...\n";
+                isStreaming = false;
+                sendLine("STOP");
+                receiveLine();
+                this_thread::sleep_for(chrono::milliseconds(500));
+            }
             sendLine("QUIT");
             running = false;
         }

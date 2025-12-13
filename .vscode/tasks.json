@@ -115,7 +115,12 @@
 				"Client\\\\client.cpp",
 				"-o",
 				"Client\\\\client.exe",
-				"-lws2_32"
+				"-lws2_32",
+				"-lshlwapi",
+				"-lgdi32",
+				"-luser32",
+				"-lole32",
+				"-lgdiplus"
 			],
 			"isBackground": false,
 			"problemMatcher": [
