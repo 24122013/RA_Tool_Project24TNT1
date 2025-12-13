@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Remote Admin Tool</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <!-- Decorative Stickers -->
+    <div class="sticker sticker-1">☁️</div>
+    <div class="sticker sticker-2">✨</div>
+    <div class="sticker sticker-3">🌙</div>
+    <div class="sticker sticker-4">⭐</div>
+    <div class="sticker sticker-5">🌸</div>
+    <div class="sticker sticker-6">🦋</div>
+    <div class="sticker sticker-7">🌿</div>
+    <div class="sticker sticker-8">💫</div>
+    <div class="sticker sticker-9">🌼</div>
+    <div class="sticker sticker-10">🍃</div>
+
+    <!-- Success Notification -->
+    <div class="success-notification" id="successNotification">
+        <div class="icon">✓</div>
+        <h3>Connected Successfully</h3>
+        <p>You are now connected to the server</p>
+    </div>
+
+    <!-- Connection Status -->
+    <div class="status-indicator">
+        <div class="status-box disconnected" id="statusBox"></div>
+        <span class="status-text" id="statusText">Disconnected</span>
+    </div>
+
+    <!-- Home Page -->
+    <div class="home-page" id="homePage">
+        <div class="connection-box">
+            <h1>Hello</h1>
+            <p>Enter server IP address to establish connection</p>
+            <div class="input-group">
+                <input type="text" id="ipInput" placeholder="192.168.1.1" />
+            </div>
+            <button class="btn-connect" onclick="connect()">Connect</button>
+        </div>
+    </div>
+
+    <!-- Main Container -->
+    <div class="main-container" id="mainContainer">
+        <!-- Top Navigation -->
+        <div class="top-nav">
+            <div class="nav-buttons">
+                <div class="nav-indicator" id="navIndicator"></div>
+                <button class="nav-btn" onclick="navigateTo(0)">Process</button>
+                <button class="nav-btn" onclick="navigateTo(1)">Application</button>
+                <button class="nav-btn" onclick="navigateTo(2)">Keylog</button>
+                <button class="nav-btn" onclick="navigateTo(3)">Screenshot</button>
+                <button class="nav-btn" onclick="navigateTo(4)">Webcam</button>
+                <button class="nav-btn" onclick="navigateTo(5)">System Control</button>
+                <button class="nav-btn" onclick="disconnect()">Disconnect</button>
+            </div>
+        </div>
+
+        <!-- Windows -->
+        <div class="windows-container">
+            <div class="windows-wrapper" id="windowsWrapper">
+                <!-- Process Window -->
+                <div class="window">
+                    <div class="window-content">
+                        <h2>Process Management</h2>
+                        <div class="action-buttons">
+                            <button class="action-btn" onclick="showInput('kill')">Kill Process</button>
+                            <button class="action-btn" onclick="showProcessList()">See Processes</button>
+                            <button class="action-btn" onclick="showInput('start')">Start Process</button>
+                        </div>
+                        <div class="process-list" id="processList" style="display: none;"></div>
+                    </div>
+                </div>
+
+                <!-- Application Window -->
+                <div class="window">
+                    <div class="window-content">
+                        <h2>Application Management</h2>
+                        <div class="action-buttons">
+                            <button class="action-btn" onclick="showInput('killApp')">Kill Application</button>
+                            <button class="action-btn" onclick="showAppList()">See Applications</button>
+                            <button class="action-btn" onclick="showInput('startApp')">Start Application</button>
+                        </div>
+                        <div class="process-list" id="appList" style="display: none;"></div>
+                    </div>
+                </div>
+
+                <!-- Keylog Window -->
+                <div class="window">
+                    <div class="window-content">
+                        <h2>Keystroke Logger</h2>
+                        <div class="action-buttons">
+                            <button class="action-btn" onclick="hookKeylog()">Hook</button>
+                            <button class="action-btn" onclick="unhookKeylog()">Unhook</button>
+                            <button class="action-btn" onclick="printKeylog()">Print Logs</button>
+                        </div>
+                        <div class="keylog-output" id="keylogOutput" style="display: none;"></div>
+                    </div>
+                </div>
+
+                <!-- Screenshot Window -->
+                <div class="window">
+                    <div class="window-content">
+                        <h2>Screenshot</h2>
+                        <button class="action-btn" onclick="captureScreenshot()">Capture Screen</button>
+                        <div class="media-display" id="screenshotDisplay"></div>
+                    </div>
+                </div>
+
+                <!-- Webcam Window -->
+                <div class="window">
+                    <div class="window-content">
+                        <h2>Webcam Record</h2>
+                        <div class="action-buttons">
+                            <button class="action-btn" onclick="startWebcam()">Start Recording</button>
+                            <button class="action-btn" onclick="endWebcam()">End Recording</button>
+                        </div>
+                        <div class="media-display" id="webcamDisplay"></div>
+                    </div>
+                </div>
+
+                <!-- System Control Window -->
+                <div class="window">
+                    <div class="window-content">
+                        <h2>System Control</h2>
+                        <p style="margin-bottom: 30px; color: #7a7a7a; font-size: 14px; letter-spacing: 0.3px;">Control the remote server system</p>
+                        <div class="action-buttons">
+                            <button class="action-btn danger" onclick="shutdownServer()">Shut Down Server</button>
+                            <button class="action-btn success" onclick="restartServer()">Restart Server</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Input Modal -->
+    <div class="input-modal" id="inputModal">
+        <div class="modal-content">
+            <h3 id="modalTitle">Enter Information</h3>
+            <input type="text" id="modalInput" placeholder="Enter value..." />
+            <div class="modal-buttons">
+                <button class="btn-submit" onclick="submitInput()">Submit</button>
+                <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
