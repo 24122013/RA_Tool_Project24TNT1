@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@300;400;500;600&family=Montserrat:wght@300;400;500;600&display=swap');
+
 * {
     margin: 0;
     padding: 0;
@@ -5,10 +7,16 @@
 }
 
 body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    font-family: 'Montserrat', 'Segoe UI', sans-serif;
     background: linear-gradient(135deg, #f5f5f0 0%, #e8e4d9 100%);
     overflow: hidden;
     height: 100vh;
+}
+
+h1, h2, h3, .elegant-text {
+    font-family: 'Cormorant Garamond', serif;
+    font-weight: 400;
+    letter-spacing: 0.5px;
 }
 
 /* Smooth transitions for all elements */
@@ -23,50 +31,116 @@ button, input {
 /* Connection Status */
 .status-indicator {
     position: fixed;
-    top: 20px;
-    right: 20px;
+    top: 25px;
+    right: 30px;
     display: flex;
     align-items: center;
-    gap: 8px;
-    background: white;
-    padding: 10px 20px;
-    border-radius: 25px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+    gap: 12px;
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: blur(10px);
+    padding: 14px 28px;
+    border-radius: 30px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.08);
     z-index: 1000;
+    border: 1px solid rgba(212, 197, 169, 0.2);
 }
 
 .status-box {
-    width: 12px;
-    height: 12px;
+    width: 10px;
+    height: 10px;
     border-radius: 50%;
-    transition: background 0.3s;
-    animation: pulse 2s infinite;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+}
+
+.status-box::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    opacity: 0;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .status-box.connected { 
-    background: #4caf50;
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.7);
+    background: linear-gradient(135deg, #81c784, #66bb6a);
+    box-shadow: 0 0 10px rgba(129, 199, 132, 0.4);
 }
-.status-box.disconnected {
-    background: #f44336;
-    box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+
+.status-box.connected::before {
+    background: #66bb6a;
+    animation: pulse 2s ease-in-out infinite;
 }
+
+.status-box.disconnected { 
+    background: linear-gradient(135deg, #e57373, #ef5350);
+    box-shadow: 0 0 10px rgba(229, 115, 115, 0.4);
+}
+
 @keyframes pulse {
-    0% {
-        box-shadow: 0 0 0 0 rgba(76, 175, 80, 0.7), 0 0 0 0 rgba(244, 67, 54, 0.7);
-    }
-    70% {
-        box-shadow: 0 0 0 10px rgba(76, 175, 80, 0), 0 0 0 10px rgba(244, 67, 54, 0);
-    }
-    100% {
-        box-shadow: 0 0 0 0 rgba(76, 175, 80, 0), 0 0 0 0 rgba(244, 67, 54, 0);
-    }
+    0%, 100% { opacity: 0; transform: translate(-50%, -50%) scale(1); }
+    50% { opacity: 0.3; transform: translate(-50%, -50%) scale(2); }
 }
 
 .status-text {
-    font-size: 14px;
+    font-size: 13px;
     font-weight: 500;
-    color: #333;
+    color: #5a5a5a;
+    letter-spacing: 0.5px;
+    font-family: 'Montserrat', sans-serif;
+    transition: color 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.status-text.success {
+    color: #66bb6a;
+}
+
+/* Success Notification */
+.success-notification {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0.8);
+    background: rgba(255, 255, 255, 0.98);
+    backdrop-filter: blur(10px);
+    padding: 40px 60px;
+    border-radius: 20px;
+    box-shadow: 0 10px 50px rgba(0,0,0,0.2);
+    z-index: 300;
+    opacity: 0;
+    pointer-events: none;
+    transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    text-align: center;
+    border: 2px solid #81c784;
+}
+
+.success-notification.show {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+}
+
+.success-notification .icon {
+    font-size: 64px;
+    margin-bottom: 20px;
+}
+
+.success-notification h3 {
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 32px;
+    color: #66bb6a;
+    margin-bottom: 10px;
+    font-weight: 400;
+}
+
+.success-notification p {
+    font-family: 'Montserrat', sans-serif;
+    font-size: 14px;
+    color: #7a7a7a;
+    letter-spacing: 0.3px;
 }
 
 /* Home Page */
@@ -75,7 +149,8 @@ button, input {
     justify-content: center;
     align-items: center;
     height: 100vh;
-    animation: fadeIn 1s ease-in-out;
+    transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1), 
+                transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .home-page.hidden {
@@ -83,16 +158,6 @@ button, input {
     transform: scale(0.95);
     pointer-events: none;
     position: absolute;
-}
-@keyframes fadeIn {
-    from {
-        opacity: 0;
-        transform: translateY(20px);
-    }
-    to {
-        opacity: 1;
-        transform: translateY(0);
-    }
 }
 
 .connection-box {
@@ -112,16 +177,18 @@ button, input {
 }
 
 .connection-box h1 {
-    color: #333;
-    font-size: 32px;
+    color: #4a4a4a;
+    font-size: 42px;
     margin-bottom: 15px;
-    font-weight: 300;
+    font-weight: 400;
+    font-family: 'Cormorant Garamond', serif;
 }
 
 .connection-box p {
-    color: #666;
+    color: #7a7a7a;
     margin-bottom: 30px;
-    font-size: 16px;
+    font-size: 15px;
+    letter-spacing: 0.3px;
 }
 
 .input-group {
@@ -133,7 +200,9 @@ button, input {
     padding: 15px;
     border: 2px solid #e8e4d9;
     border-radius: 10px;
-    font-size: 16px;
+    font-size: 15px;
+    font-family: 'Montserrat', sans-serif;
+    letter-spacing: 0.3px;
     transition: border 0.4s cubic-bezier(0.4, 0, 0.2, 1),
                 transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
                 box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1);
@@ -153,12 +222,14 @@ button, input {
     color: white;
     border: none;
     border-radius: 10px;
-    font-size: 16px;
+    font-size: 15px;
     cursor: pointer;
     transition: background 0.4s cubic-bezier(0.4, 0, 0.2, 1),
                 transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
                 box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     font-weight: 500;
+    letter-spacing: 0.5px;
+    font-family: 'Montserrat', sans-serif;
 }
 
 .btn-connect:hover {
@@ -212,15 +283,18 @@ button, input {
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 14px;
-    color: #666;
+    font-size: 13px;
+    color: #6a6a6a;
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
     z-index: 2;
+    font-weight: 500;
+    letter-spacing: 0.5px;
+    font-family: 'Montserrat', sans-serif;
 }
 
 .nav-btn:hover {
-    color: #333;
+    color: #4a4a4a;
     transform: translateY(-2px);
 }
 
@@ -279,10 +353,12 @@ button, input {
 }
 
 .window-content h2 {
-    font-size: 28px;
-    color: #333;
+    font-size: 36px;
+    color: #4a4a4a;
     margin-bottom: 30px;
-    font-weight: 300;
+    font-weight: 400;
+    font-family: 'Cormorant Garamond', serif;
+    letter-spacing: 0.5px;
 }
 
 .action-buttons {
@@ -297,9 +373,12 @@ button, input {
     border: none;
     border-radius: 10px;
     cursor: pointer;
-    font-size: 16px;
-    color: #333;
+    font-size: 14px;
+    color: #5a5a5a;
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.4px;
 }
 
 .action-btn:hover {
@@ -323,6 +402,18 @@ button, input {
     color: white;
     transform: translateX(5px);
     box-shadow: 0 5px 20px rgba(211, 47, 47, 0.3);
+}
+
+.action-btn.success {
+    background: #e8f5e9;
+    color: #4caf50;
+}
+
+.action-btn.success:hover {
+    background: #4caf50;
+    color: white;
+    transform: translateX(5px);
+    box-shadow: 0 5px 20px rgba(76, 175, 80, 0.3);
 }
 
 /* Input Modal */
@@ -363,7 +454,11 @@ button, input {
 
 .modal-content h3 {
     margin-bottom: 20px;
-    color: #333;
+    color: #4a4a4a;
+    font-family: 'Cormorant Garamond', serif;
+    font-size: 28px;
+    font-weight: 400;
+    letter-spacing: 0.5px;
 }
 
 .modal-content input {
@@ -373,6 +468,8 @@ button, input {
     border: 2px solid #e8e4d9;
     border-radius: 8px;
     font-size: 14px;
+    font-family: 'Montserrat', sans-serif;
+    letter-spacing: 0.3px;
     transition: border 0.4s cubic-bezier(0.4, 0, 0.2, 1),
                 transform 0.4s cubic-bezier(0.4, 0, 0.2, 1),
                 box-shadow 0.4s cubic-bezier(0.4, 0, 0.2, 1);
@@ -396,7 +493,10 @@ button, input {
     border: none;
     border-radius: 8px;
     cursor: pointer;
-    font-size: 14px;
+    font-size: 13px;
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 500;
+    letter-spacing: 0.4px;
     transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -441,8 +541,10 @@ button, input {
     background: #f5f5f0;
     margin-bottom: 10px;
     border-radius: 8px;
-    font-size: 14px;
-    color: #333;
+    font-size: 13px;
+    color: #5a5a5a;
+    font-family: 'Montserrat', sans-serif;
+    letter-spacing: 0.3px;
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -450,6 +552,7 @@ button, input {
     background: #e8e4d9;
     transform: translateX(5px);
     box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+    color: #4a4a4a;
 }
 
 /* Screenshot/Webcam Display */
@@ -488,15 +591,16 @@ button, input {
     margin-top: 20px;
     min-height: 200px;
     text-align: left;
-    font-family: monospace;
-    font-size: 14px;
-    color: #333;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: #5a5a5a;
     max-height: 300px;
     overflow-y: auto;
     opacity: 0;
     transform: translateY(10px);
     transition: opacity 0.6s cubic-bezier(0.4, 0, 0.2, 1),
                 transform 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    letter-spacing: 0.2px;
 }
 
 .keylog-output.show {
@@ -507,7 +611,7 @@ button, input {
 /* Decorative Stickers */
 .sticker {
     position: fixed;
-    font-size: 150px;
+    font-size: 80px;
     opacity: 0.15;
     pointer-events: none;
     z-index: 0;
@@ -543,33 +647,38 @@ button, input {
     animation-delay: 4.5s;
 }
 
-/* Notification Toast */
-.notification {
-    position: fixed;
-    top: 80px;
-    right: 20px;
-    background: white;
-    padding: 15px 25px;
-    border-radius: 10px;
-    box-shadow: 0 5px 20px rgba(0,0,0,0.2);
-    z-index: 2000;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    opacity: 0;
-    transform: translateX(400px);
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
-    font-size: 14px;
-    color: #333;
-    max-width: 350px;
+.sticker-5 {
+    top: 50%;
+    left: 5%;
+    animation-delay: 2s;
 }
 
-.notification.show {
-    opacity: 1;
-    transform: translateX(0);
+.sticker-6 {
+    top: 50%;
+    right: 5%;
+    animation-delay: 2.5s;
 }
 
-.notification.success { border-left: 4px solid #4caf50; }
-.notification.error { border-left: 4px solid #f44336; }
-.notification.warning { border-left: 4px solid #ff9800; }
-.notification.info { border-left: 4px solid #2196f3; }
+.sticker-7 {
+    bottom: 40%;
+    left: 15%;
+    animation-delay: 3.5s;
+}
+
+.sticker-8 {
+    top: 30%;
+    right: 20%;
+    animation-delay: 1s;
+}
+
+.sticker-9 {
+    bottom: 20%;
+    left: 50%;
+    animation-delay: 4s;
+}
+
+.sticker-10 {
+    top: 60%;
+    left: 25%;
+    animation-delay: 5s;
+}

@@ -12,15 +12,25 @@
     <div class="sticker sticker-2">✨</div>
     <div class="sticker sticker-3">🌙</div>
     <div class="sticker sticker-4">⭐</div>
+    <div class="sticker sticker-5">🌸</div>
+    <div class="sticker sticker-6">🦋</div>
+    <div class="sticker sticker-7">🌿</div>
+    <div class="sticker sticker-8">💫</div>
+    <div class="sticker sticker-9">🌼</div>
+    <div class="sticker sticker-10">🍃</div>
+
+    <!-- Success Notification -->
+    <div class="success-notification" id="successNotification">
+        <div class="icon">✓</div>
+        <h3>Connected Successfully</h3>
+        <p>You are now connected to the server</p>
+    </div>
 
     <!-- Connection Status -->
     <div class="status-indicator">
         <div class="status-box disconnected" id="statusBox"></div>
         <span class="status-text" id="statusText">Disconnected</span>
     </div>
-
-    <!-- Notification Toast -->
-    <div class="notification" id="notification"></div>
 
     <!-- Home Page -->
     <div class="home-page" id="homePage">
@@ -42,10 +52,10 @@
                 <div class="nav-indicator" id="navIndicator"></div>
                 <button class="nav-btn" onclick="navigateTo(0)">Process</button>
                 <button class="nav-btn" onclick="navigateTo(1)">Application</button>
-                <button class="nav-btn" onclick="navigateTo(3)">Keylog</button>
-                <button class="nav-btn" onclick="navigateTo(4)">Screenshot</button>
-                <button class="nav-btn" onclick="navigateTo(5)">Webcam</button>
-                <button class="nav-btn" onclick="navigateTo(6)">SystemControl</button>
+                <button class="nav-btn" onclick="navigateTo(2)">Keylog</button>
+                <button class="nav-btn" onclick="navigateTo(3)">Screenshot</button>
+                <button class="nav-btn" onclick="navigateTo(4)">Webcam</button>
+                <button class="nav-btn" onclick="navigateTo(5)">System Control</button>
                 <button class="nav-btn" onclick="disconnect()">Disconnect</button>
             </div>
         </div>
@@ -79,18 +89,6 @@
                     </div>
                 </div>
 
-                <!-- Registry Window -->
-                <div class="window">
-                    <div class="window-content">
-                        <h2>Registry Editor</h2>
-                        <div class="action-buttons">
-                            <button class="action-btn">Read Registry</button>
-                            <button class="action-btn">Write Registry</button>
-                            <button class="action-btn">Delete Key</button>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Keylog Window -->
                 <div class="window">
                     <div class="window-content">
@@ -109,7 +107,7 @@
                     <div class="window-content">
                         <h2>Screenshot</h2>
                         <button class="action-btn" onclick="captureScreenshot()">Capture Screen</button>
-                        <div class="media-display" id="screenshotDisplay" style="display: none;"></div>
+                        <div class="media-display" id="screenshotDisplay"></div>
                     </div>
                 </div>
 
@@ -129,9 +127,10 @@
                 <div class="window">
                     <div class="window-content">
                         <h2>System Control</h2>
+                        <p style="margin-bottom: 30px; color: #7a7a7a; font-size: 14px; letter-spacing: 0.3px;">Control the remote server system</p>
                         <div class="action-buttons">
-                            <button class="action-btn danger" onclick="shutdownServer()">Shutdown</button>
-                            <button class="action-btn" onclick="restartServer()">Restart</button>
+                            <button class="action-btn danger" onclick="shutdownServer()">Shut Down Server</button>
+                            <button class="action-btn success" onclick="restartServer()">Restart Server</button>
                         </div>
                     </div>
                 </div>
