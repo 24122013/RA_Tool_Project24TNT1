@@ -6,6 +6,8 @@
 #include <string>
 #include <vector>
 #include <iomanip>
+#include <thread>
+#include <chrono>
 
 #pragma comment(lib, "ws2_32.lib")
 
@@ -37,7 +39,7 @@ void displayMainMenu() {
     cout << "2. Screenshot\n";
     cout << "3. Process Management\n";
     cout << "4. Application Management\n";
-    cout << "5. Webcam Recording\n";
+    cout << "5. Webcam Streaming\n";
     cout << "6. Shutdown Server\n";
     cout << "0. Exit\n";
     cout << "========================================\n";
@@ -275,7 +277,7 @@ void applicationMenu() {
     }
 }
 
-// Webcam Recording
+// Webcam Streaming
 void webcamMenu() {
     string choice;
     bool running = true;
@@ -283,9 +285,9 @@ void webcamMenu() {
     sendLine("WEBCAM");
     
     while (running) {
-        cout << "\n----- WEBCAM RECORDING -----\n";
-        cout << "1. Start Recording\n";
-        cout << "2. Stop Recording & Download Video\n";
+        cout << "\n----- WEBCAM STREAMING -----\n";
+        cout << "1. Start Streaming\n";
+        cout << "2. Stop Streaming\n";
         cout << "0. Back to Main Menu\n";
         cout << "Choose: ";
         cin >> choice;
@@ -294,43 +296,76 @@ void webcamMenu() {
         if (choice == "1") {
             sendLine("START");
             string response = receiveLine();
-            cout << response << endl;
+            
+            if (response == "OK") {
+                cout << "Streaming started! Receiving frames...\n";
+                cout << "Press Ctrl+C or use option 2 to stop.\n";
+                
+                // Create frames directory
+                system("if not exist frames mkdir frames");
+                
+                int frameCount = 0;
+                auto startTime = chrono::high_resolution_clock::now();
+                
+                // Receive frames in a thread
+                thread receiveThread([&]() {
+                    while (choice == "1") {
+                        try {
+                            // Receive frame size
+                            string sizeStr = receiveLine();
+                            if (sizeStr.empty() || sizeStr == "STOPPED") break;
+                            
+                            unsigned long frameSize = stoul(sizeStr);
+                            if (frameSize == 0 || frameSize > 500000) continue;
+                            
+                            // Receive frame data
+                            vector<char> frameBuffer(frameSize);
+                            unsigned long totalReceived = 0;
+                            
+                            while (totalReceived < frameSize) {
+                                int bytesReceived = recv(clientSocket, frameBuffer.data() + totalReceived, 
+                                                        frameSize - totalReceived, 0);
+                                if (bytesReceived <= 0) break;
+                                totalReceived += bytesReceived;
+                            }
+                            
+                            if (totalReceived == frameSize) {
+                                // Save frame as JPEG
+                                string filename = "frames/frame_" + to_string(frameCount) + ".jpg";
+                                ofstream file(filename, ios::binary);
+                                file.write(frameBuffer.data(), frameSize);
+                                file.close();
+                                
+                                frameCount++;
+                                
+                                // Calculate and display FPS every 30 frames
+                                if (frameCount % 30 == 0) {
+                                    auto currentTime = chrono::high_resolution_clock::now();
+                                    auto duration = chrono::duration_cast<chrono::milliseconds>(currentTime - startTime);
+                                    double fps = (frameCount * 1000.0) / duration.count();
+                                    cout << "Frames: " << frameCount << " | FPS: " << fixed << setprecision(1) << fps << "\r";
+                                    cout.flush();
+                                }
+                            }
+                        } catch (...) {
+                            break;
+                        }
+                    }
+                    cout << "\nTotal frames received: " << frameCount << endl;
+                });
+                
+                receiveThread.detach();
+                
+                cout << "Streaming in progress. Select option 2 to stop.\n";
+                
+            } else {
+                cout << response << endl;
+            }
             
         } else if (choice == "2") {
             sendLine("STOP");
-            string status = receiveLine();
-            
-            if (status == "OK") {
-                string sizeStr = receiveLine();
-                unsigned long size = stoul(sizeStr);
-                
-                cout << "Receiving video (" << size << " bytes)...\n";
-                
-                char* buffer = new char[size];
-                unsigned long totalReceived = 0;
-                
-                while (totalReceived < size) {
-                    int bytesReceived = recv(clientSocket, buffer + totalReceived, size - totalReceived, 0);
-                    if (bytesReceived > 0) {
-                        totalReceived += bytesReceived;
-                        if (totalReceived % 10000 == 0) {
-                            cout << "Received: " << totalReceived << "/" << size << " bytes\r";
-                        }
-                    }
-                }
-                
-                cout << "\nSaving video...\n";
-                string filename = "webcam_recording.avi";
-                ofstream file(filename, ios::binary);
-                file.write(buffer, size);
-                file.close();
-                
-                delete[] buffer;
-                
-                cout << "Video saved as: " << filename << endl;
-            } else {
-                cout << status << endl;
-            }
+            string response = receiveLine();
+            cout << response << endl;
             
         } else if (choice == "0") {
             sendLine("QUIT");
