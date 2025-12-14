@@ -22,8 +22,26 @@
     <!-- Success Notification -->
     <div class="success-notification" id="successNotification">
         <div class="icon">✓</div>
-        <h3>Connected Successfully</h3>
-        <p>You are now connected to the server</p>
+        <div class="content">
+            <h3>Connected Successfully</h3>
+            <p>You are now connected to the server</p>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Confirm Dialog -->
+    <div class="confirm-dialog" id="confirmDialog">
+        <div class="confirm-content">
+            <div class="confirm-icon">⚠️</div>
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMessage">Are you sure you want to proceed?</p>
+            <div class="confirm-buttons">
+                <button class="btn-confirm-yes" id="confirmYes">Yes</button>
+                <button class="btn-confirm-no" id="confirmNo">No</button>
+            </div>
+        </div>
     </div>
 
     <!-- Connection Status -->
@@ -38,7 +56,7 @@
             <h1>Hello</h1>
             <p>Enter server IP address to establish connection</p>
             <div class="input-group">
-                <input type="text" id="ipInput" placeholder="192.168.1.1" />
+                <input type="text" id="ipInput" placeholder="192.168.1.1" onkeypress="handleEnterKey(event)" />
             </div>
             <button class="btn-connect" onclick="connect()">Connect</button>
         </div>
@@ -108,6 +126,10 @@
                         <h2>Screenshot</h2>
                         <button class="action-btn" onclick="captureScreenshot()">Capture Screen</button>
                         <div class="media-display" id="screenshotDisplay"></div>
+                        <div class="screenshot-actions" id="screenshotActions" style="display: none;">
+                            <button class="btn-save" onclick="saveScreenshot()">Save</button>
+                            <button class="btn-delete" onclick="deleteScreenshot()">Delete</button>
+                        </div>
                     </div>
                 </div>
 
@@ -119,7 +141,14 @@
                             <button class="action-btn" onclick="startWebcam()">Start Recording</button>
                             <button class="action-btn" onclick="endWebcam()">End Recording</button>
                         </div>
-                        <div class="media-display" id="webcamDisplay"></div>
+                        <div class="live-indicator" id="liveIndicator">
+                            <div class="live-dot"></div>
+                            <span class="live-text">Live</span>
+                        </div>
+                        <video class="webcam-video" id="webcamVideo" width="600" autoplay muted loop>
+                            <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
                     </div>
                 </div>
 
@@ -142,7 +171,7 @@
     <div class="input-modal" id="inputModal">
         <div class="modal-content">
             <h3 id="modalTitle">Enter Information</h3>
-            <input type="text" id="modalInput" placeholder="Enter value..." />
+            <input type="text" id="modalInput" placeholder="Enter value..." onkeypress="handleModalEnterKey(event)" />
             <div class="modal-buttons">
                 <button class="btn-submit" onclick="submitInput()">Submit</button>
                 <button class="btn-cancel" onclick="closeModal()">Cancel</button>
