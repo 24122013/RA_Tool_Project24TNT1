@@ -1,0 +1,17 @@
+# ===== Build output =====
+*.exe
+*.dll
+*.o
+*.obj
+
+# ===== Build folders =====
+build/
+bin/
+obj/
+
+# ===== IDE =====
+.vs/
+.vscode/
+
+# ===== Logs =====
+*.log

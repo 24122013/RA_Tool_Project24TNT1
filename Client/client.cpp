@@ -353,7 +353,7 @@ void displayStreamingWindow() {
 
     streamWindow = CreateWindowA(
         "WebcamStreamClass",
-        "Webcam Stream - Press ESC to close",
+        "Webcam Stream",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE,
         100, 100, 800, 600,
         NULL, NULL, GetModuleHandle(NULL), NULL
@@ -372,29 +372,49 @@ void displayStreamingWindow() {
     setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
     int recvBuff = 512 * 1024; // 512KB receive buffer
     setsockopt(clientSocket, SOL_SOCKET, SO_RCVBUF, (char*)&recvBuff, sizeof(recvBuff));
-
+    DWORD timeout = 2000; // 2 giây
+    setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
     vector<char> buffer;
     int frameCount = 0;
     auto startTime = chrono::high_resolution_clock::now();
 
-    cout << "\n[Streaming] Window opened. Press ESC in window to close.\n";
+    cout << "\n[Streaming] Window opened. Press 2 to stop streaming.\n";
 
     while (isStreaming) {
-        // Pump ALL messages to prevent "Not Responding"
         MSG msg;
+        // Vẫn phải giữ cái này để ứng dụng không bị treo
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_KEYDOWN && msg.wParam == VK_ESCAPE) {
-                isStreaming = false;
-                break;
-            }
             TranslateMessage(&msg);
             DispatchMessage(&msg);
         }
         if (!isStreaming || !streamWindow) break;
 
+        // CƠ CHẾ TỰ ĐỘNG ĐỒNG BỘ (RESYNC)
+        int magic = 0;
+        int n = recv(clientSocket, (char*)&magic, sizeof(magic), MSG_PEEK); // Chỉ nhìn, chưa lấy ra
+        
+        if (n > 0) {
+            if (magic != 0xFFFFFFFF) {
+                // Nếu không phải Header -> Đây là rác -> Bỏ qua 1 byte rồi thử lại
+                char trash;
+                recv(clientSocket, &trash, 1, 0); 
+                continue; // Quay lại đầu vòng lặp
+            }
+            
+            // Nếu đúng là Header -> Lấy nó ra khỏi buffer
+            recv(clientSocket, (char*)&magic, sizeof(magic), 0);
+        } else {
+             // Socket lỗi hoặc chưa có dữ liệu
+             if (n == 0 || WSAGetLastError() != WSAEWOULDBLOCK) {
+                 isStreaming = false; 
+                 break;
+             }
+             continue;
+        }
+
         // Receive frame size (binary DWORD, not ASCII)
         DWORD frameSize = 0;
-        int n = recv(clientSocket, (char*)&frameSize, sizeof(frameSize), MSG_WAITALL);
+        n = recv(clientSocket, (char*)&frameSize, sizeof(frameSize), MSG_WAITALL);
         if (n <= 0) {
             // Connection closed or error
             isStreaming = false;
@@ -436,9 +456,9 @@ void displayStreamingWindow() {
             pStream->Seek(li, STREAM_SEEK_SET, NULL);
 
             // Load and draw image
-            Image* newImage = new Image(pStream);
+            Gdiplus::Image* newImage = new Gdiplus::Image(pStream);
             
-            if (newImage && newImage->GetLastStatus() == Ok) {
+            if (newImage && newImage->GetLastStatus() == Gdiplus::Ok) {
                 // Draw image to window
                 HDC hdc = GetDC(streamWindow);
                 if (hdc) {
@@ -454,11 +474,8 @@ void displayStreamingWindow() {
                     auto ms = chrono::duration_cast<chrono::milliseconds>(currentTime - startTime).count();
                     double fps = (frameCount * 1000.0) / max(1LL, ms);
                     string title = "Webcam Stream - FPS: " + to_string((int)fps) +
-                                   " | Frames: " + to_string(frameCount) + " - Press ESC to close";
+                                   " | Frames: " + to_string(frameCount);
                     SetWindowTextA(streamWindow, title.c_str());
-                    cout << "FPS: " << fixed << setprecision(1) << fps
-                         << " | Frames: " << frameCount << "\r";
-                    cout.flush();
                 }
             } else {
                 if (newImage) delete newImage;
@@ -467,13 +484,13 @@ void displayStreamingWindow() {
             pStream->Release();
         }
     }
-
     cout << "\n[Streaming] Total frames received: " << frameCount << endl;
 
     if (streamWindow) {
         DestroyWindow(streamWindow);
         streamWindow = NULL;
     }
+
     GdiplusShutdown(gdiplusToken);
 }
 

@@ -516,6 +516,10 @@ static LRESULT CALLBACK FrameCallback(HWND hWnd, LPVIDEOHDR lpVH) {
     
     // Skip invalid frames
     if (dataSize < 1024) return 0;
+    
+    // 1. Gửi Magic Number (Header) để đánh dấu bắt đầu frame
+    int magic = 0xFFFFFFFF; 
+    send(clientSocket, (char*)&magic, sizeof(magic), 0);
 
     // Send frame size (binary DWORD)
     int iResult = send(clientSocket, (char*)&dataSize, sizeof(dataSize), 0);
@@ -600,9 +604,10 @@ void webcam() {
 
                     // Cleanup
                     isRecording = false;
-                    SendMessage(hCapture, WM_CAP_SET_CALLBACK_FRAME, 0, 0);
-                    SendMessage(hCapture, WM_CAP_SET_PREVIEW, FALSE, 0);
+                    
                     if (hCapture) {
+                        SendMessage(hCapture, WM_CAP_SET_CALLBACK_FRAME, 0, 0);
+                        SendMessage(hCapture, WM_CAP_SET_PREVIEW, FALSE, 0);
                         SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
                         DestroyWindow(hCapture);
                         hCapture = NULL;
@@ -618,32 +623,11 @@ void webcam() {
             if (streaming) {
                 streaming = false;
                 isRecording = false;
-                Sleep(200);
-                if (hCapture) {
-                    SendMessage(hCapture, WM_CAP_SET_CALLBACK_FRAME, 0, 0);
-                    SendMessage(hCapture, WM_CAP_SET_PREVIEW, FALSE, 0);
-                    SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
-                    DestroyWindow(hCapture);
-                    hCapture = NULL;
-                }
-                sendLine("STOPPED");
             } else {
                 sendLine("ERROR: Not streaming");
             }
 
         } else if (cmd == "QUIT") {
-            if (streaming) {
-                streaming = false;
-                isRecording = false;
-                Sleep(200);
-                if (hCapture) {
-                    SendMessage(hCapture, WM_CAP_SET_CALLBACK_FRAME, 0, 0);
-                    SendMessage(hCapture, WM_CAP_SET_PREVIEW, FALSE, 0);
-                    SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
-                    DestroyWindow(hCapture);
-                    hCapture = NULL;
-                }
-            }
             return;
         }
     }
