@@ -12,6 +12,37 @@
     <div class="sticker sticker-2">✨</div>
     <div class="sticker sticker-3">🌙</div>
     <div class="sticker sticker-4">⭐</div>
+    <div class="sticker sticker-5">🌸</div>
+    <div class="sticker sticker-6">🦋</div>
+    <div class="sticker sticker-7">🌿</div>
+    <div class="sticker sticker-8">💫</div>
+    <div class="sticker sticker-9">🌼</div>
+    <div class="sticker sticker-10">🍃</div>
+
+    <!-- Success Notification -->
+    <div class="success-notification" id="successNotification">
+        <div class="icon">✓</div>
+        <div class="content">
+            <h3>Connected Successfully</h3>
+            <p>You are now connected to the server</p>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div class="toast-container" id="toastContainer"></div>
+
+    <!-- Confirm Dialog -->
+    <div class="confirm-dialog" id="confirmDialog">
+        <div class="confirm-content">
+            <div class="confirm-icon">⚠️</div>
+            <h3 id="confirmTitle">Confirm Action</h3>
+            <p id="confirmMessage">Are you sure you want to proceed?</p>
+            <div class="confirm-buttons">
+                <button class="btn-confirm-yes" id="confirmYes">Yes</button>
+                <button class="btn-confirm-no" id="confirmNo">No</button>
+            </div>
+        </div>
+    </div>
 
     <!-- Connection Status -->
     <div class="status-indicator">
@@ -19,16 +50,13 @@
         <span class="status-text" id="statusText">Disconnected</span>
     </div>
 
-    <!-- Notification Toast -->
-    <div class="notification" id="notification"></div>
-
     <!-- Home Page -->
     <div class="home-page" id="homePage">
         <div class="connection-box">
             <h1>Hello</h1>
             <p>Enter server IP address to establish connection</p>
             <div class="input-group">
-                <input type="text" id="ipInput" placeholder="192.168.1.1" />
+                <input type="text" id="ipInput" placeholder="192.168.1.1" onkeypress="handleEnterKey(event)" />
             </div>
             <button class="btn-connect" onclick="connect()">Connect</button>
         </div>
@@ -42,10 +70,10 @@
                 <div class="nav-indicator" id="navIndicator"></div>
                 <button class="nav-btn" onclick="navigateTo(0)">Process</button>
                 <button class="nav-btn" onclick="navigateTo(1)">Application</button>
-                <button class="nav-btn" onclick="navigateTo(3)">Keylog</button>
-                <button class="nav-btn" onclick="navigateTo(4)">Screenshot</button>
-                <button class="nav-btn" onclick="navigateTo(5)">Webcam</button>
-                <button class="nav-btn" onclick="navigateTo(6)">SystemControl</button>
+                <button class="nav-btn" onclick="navigateTo(2)">Keylog</button>
+                <button class="nav-btn" onclick="navigateTo(3)">Screenshot</button>
+                <button class="nav-btn" onclick="navigateTo(4)">Webcam</button>
+                <button class="nav-btn" onclick="navigateTo(5)">System Control</button>
                 <button class="nav-btn" onclick="disconnect()">Disconnect</button>
             </div>
         </div>
@@ -79,18 +107,6 @@
                     </div>
                 </div>
 
-                <!-- Registry Window -->
-                <div class="window">
-                    <div class="window-content">
-                        <h2>Registry Editor</h2>
-                        <div class="action-buttons">
-                            <button class="action-btn">Read Registry</button>
-                            <button class="action-btn">Write Registry</button>
-                            <button class="action-btn">Delete Key</button>
-                        </div>
-                    </div>
-                </div>
-
                 <!-- Keylog Window -->
                 <div class="window">
                     <div class="window-content">
@@ -109,7 +125,11 @@
                     <div class="window-content">
                         <h2>Screenshot</h2>
                         <button class="action-btn" onclick="captureScreenshot()">Capture Screen</button>
-                        <div class="media-display" id="screenshotDisplay" style="display: none;"></div>
+                        <div class="media-display" id="screenshotDisplay"></div>
+                        <div class="screenshot-actions" id="screenshotActions" style="display: none;">
+                            <button class="btn-save" onclick="saveScreenshot()">Save</button>
+                            <button class="btn-delete" onclick="deleteScreenshot()">Delete</button>
+                        </div>
                     </div>
                 </div>
 
@@ -121,7 +141,14 @@
                             <button class="action-btn" onclick="startWebcam()">Start Recording</button>
                             <button class="action-btn" onclick="endWebcam()">End Recording</button>
                         </div>
-                        <div class="media-display" id="webcamDisplay"></div>
+                        <div class="live-indicator" id="liveIndicator">
+                            <div class="live-dot"></div>
+                            <span class="live-text">Live</span>
+                        </div>
+                        <video class="webcam-video" id="webcamVideo" width="600" autoplay muted loop>
+                            <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
+                            Your browser does not support the video tag.
+                        </video>
                     </div>
                 </div>
 
@@ -129,9 +156,10 @@
                 <div class="window">
                     <div class="window-content">
                         <h2>System Control</h2>
+                        <p style="margin-bottom: 30px; color: #7a7a7a; font-size: 14px; letter-spacing: 0.3px;">Control the remote server system</p>
                         <div class="action-buttons">
-                            <button class="action-btn danger" onclick="shutdownServer()">Shutdown</button>
-                            <button class="action-btn" onclick="restartServer()">Restart</button>
+                            <button class="action-btn danger" onclick="shutdownServer()">Shut Down Server</button>
+                            <button class="action-btn success" onclick="restartServer()">Restart Server</button>
                         </div>
                     </div>
                 </div>
@@ -143,7 +171,7 @@
     <div class="input-modal" id="inputModal">
         <div class="modal-content">
             <h3 id="modalTitle">Enter Information</h3>
-            <input type="text" id="modalInput" placeholder="Enter value..." />
+            <input type="text" id="modalInput" placeholder="Enter value..." onkeypress="handleModalEnterKey(event)" />
             <div class="modal-buttons">
                 <button class="btn-submit" onclick="submitInput()">Submit</button>
                 <button class="btn-cancel" onclick="closeModal()">Cancel</button>

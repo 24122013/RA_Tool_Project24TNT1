@@ -1,137 +1,119 @@
 let currentWindow = 0;
 let currentAction = '';
-let isScrolling = false;
-let scrollTimeout;
+let confirmCallback = null;
+let touchStartX = 0;
+let touchEndX = 0;
+let isDragging = false;
 
-// Mock data for process and app ID mapping
-const processData = {
-    '1234': 'chrome.exe',
-    '5678': 'notepad.exe',
-    '9012': 'explorer.exe'
-};
+// Store available process/app IDs
+let availableProcessIds = ['1234', '5678', '9012', '3456', '7890'];
+let availableAppIds = ['2345', '6789', '3456', '4567', '8901'];
 
-const appData = {
-    '2345': 'Google Chrome',
-    '6789': 'Visual Studio Code',
-    '3456': 'File Explorer'
-};
-
-// Notification system
-let notificationTimeout;
-function showNotification(message, type = 'info') {
-    const notification = document.getElementById('notification');
+// Toast Notification System
+function showToast(message, type = 'success') {
+    const container = document.getElementById('toastContainer');
+    const toast = document.createElement('div');
+    toast.className = `toast ${type}`;
     
-    // Icons for different types
-    const icons = {
-        success: '✅',
-        error: '❌',
-        warning: '⚠️',
-        info: 'ℹ️'
-    };
+    let icon = '✓';
+    if (type === 'error') icon = '✕';
+    if (type === 'warning') icon = '⚠';
     
-    notification.className = `notification ${type}`;
-    notification.innerHTML = `${icons[type]} ${message}`;
+    toast.innerHTML = `
+        <div class="toast-icon">${icon}</div>
+        <div class="toast-content">
+            <div class="toast-message">${message}</div>
+        </div>
+    `;
     
-    // Clear existing timeout
-    clearTimeout(notificationTimeout);
+    container.appendChild(toast);
     
-    // Show notification
-    setTimeout(() => notification.classList.add('show'), 10);
+    // Trigger animation
+    setTimeout(() => toast.classList.add('show'), 10);
     
-    // Auto hide after 1 second
-    notificationTimeout = setTimeout(() => {
-        notification.classList.remove('show');
-    }, 1000);
+    // Auto remove after 3 seconds
+    setTimeout(() => {
+        toast.classList.remove('show');
+        setTimeout(() => toast.remove(), 400);
+    }, 3000);
 }
 
-// Confirm with custom callback (still uses native for critical actions)
-function showConfirm(message, callback) {
-    if (confirm(message)) {
-        callback();
+// Custom Confirm Dialog
+function showConfirm(title, message, onConfirm) {
+    const dialog = document.getElementById('confirmDialog');
+    document.getElementById('confirmTitle').textContent = title;
+    document.getElementById('confirmMessage').textContent = message;
+    
+    confirmCallback = onConfirm;
+    dialog.classList.add('active');
+}
+
+function closeConfirm(confirmed) {
+    const dialog = document.getElementById('confirmDialog');
+    dialog.classList.remove('active');
+    
+    if (confirmed && confirmCallback) {
+        confirmCallback();
+    }
+    confirmCallback = null;
+}
+
+// IP Validation
+function validateIP(ip) {
+    const ipPattern = /^(\d{1,3}\.){3}\d{1,3}$/;
+    if (!ipPattern.test(ip)) return false;
+    
+    const parts = ip.split('.');
+    return parts.every(part => {
+        const num = parseInt(part);
+        return num >= 0 && num <= 255;
+    });
+}
+
+// Handle Enter Key for IP input
+function handleEnterKey(event) {
+    if (event.key === 'Enter') {
+        connect();
     }
 }
 
-// Wheel/Scroll event handler for navigation
-function handleWheel(e) {
-    if (isScrolling) return;
-    
-    // Check if main container is visible
-    if (!document.getElementById('mainContainer').classList.contains('active')) {
-        return;
+// Handle Enter Key for Modal input
+function handleModalEnterKey(event) {
+    if (event.key === 'Enter') {
+        submitInput();
     }
-
-    e.preventDefault();
-    
-    const delta = e.deltaY || e.detail || e.wheelDelta;
-    
-    if (delta > 0) {
-        // Scroll down - next window
-        let nextWindow = currentWindow + 1;
-        if (nextWindow === 2) nextWindow = 3; // Skip Registry
-        if (nextWindow <= 6) {
-            navigateTo(nextWindow);
-        }
-    } else {
-        // Scroll up - previous window
-        let prevWindow = currentWindow - 1;
-        if (prevWindow === 2) prevWindow = 1; // Skip Registry
-        if (prevWindow >= 0) {
-            navigateTo(prevWindow);
-        }
-    }
-    
-    // Prevent rapid scrolling
-    isScrolling = true;
-    clearTimeout(scrollTimeout);
-    scrollTimeout = setTimeout(() => {
-        isScrolling = false;
-    }, 800);
 }
-
-// Add wheel event listener
-window.addEventListener('wheel', handleWheel, { passive: false });
-window.addEventListener('DOMMouseScroll', handleWheel, { passive: false });
 
 // Connect to server
 function connect() {
     const ip = document.getElementById('ipInput').value.trim();
     
-    // Validate IP address format
-    const ipRegex = /^(\d{1,3}\.){3}\d{1,3}$/;
-    
     if (!ip) {
-        showNotification('Please enter an IP address!', 'warning');
+        showToast('Please enter your IP Address', 'warning');
         return;
     }
     
-    if (!ipRegex.test(ip)) {
-        showNotification('Invalid IP Address', 'error');
+    if (!validateIP(ip)) {
+        showToast('Invalid IP Address', 'error');
         return;
     }
     
-    // Validate each octet is 0-255
-    const octets = ip.split('.');
-    const valid = octets.every(octet => {
-        const num = parseInt(octet, 10);
-        return num >= 0 && num <= 255;
-    });
-    
-    if (!valid) {
-        showNotification('Invalid IP Address', 'error');
-        return;
-    }
-    
-    // Success
-    showNotification(`${ip} Successfully Connected`, 'success');
-    
+    document.getElementById('homePage').classList.add('hidden');
     setTimeout(() => {
-        document.getElementById('homePage').classList.add('hidden');
-        setTimeout(() => {
-            document.getElementById('mainContainer').classList.add('active');
-            updateStatus(true);
-            updateIndicator(0);
-        }, 500);
-    }, 1000);
+        document.getElementById('mainContainer').classList.add('active');
+        updateStatus(true);
+        updateIndicator(0);
+        showSuccessNotification();
+    }, 500);
+}
+
+// Show success notification
+function showSuccessNotification() {
+    const notification = document.getElementById('successNotification');
+    notification.classList.add('show');
+    setTimeout(() => {
+        notification.classList.remove('show');
+    }, 3000);
 }
 
 // Disconnect
@@ -150,45 +132,29 @@ function updateStatus(connected) {
     if (connected) {
         box.className = 'status-box connected';
         text.textContent = 'Connected';
+        text.classList.add('success');
     } else {
         box.className = 'status-box disconnected';
         text.textContent = 'Disconnected';
+        text.classList.remove('success');
     }
 }
 
 // Navigate between windows
 function navigateTo(index) {
-    // Skip Registry window (index 2)
-    if (index === 2) return;
-    
     currentWindow = index;
     const wrapper = document.getElementById('windowsWrapper');
     wrapper.style.transform = `translateX(-${index * 100}vw)`;
-    
-    // Update indicator based on visible button index
-    const buttonMap = [0, 1, 3, 4, 5, 6]; // Maps window index to button index
-    const buttonIndex = buttonMap.indexOf(index);
-    if (buttonIndex !== -1) {
-        updateIndicatorByButton(buttonIndex);
-    }
+    updateIndicator(index);
 }
 
-// Update navigation indicator by button index
-function updateIndicatorByButton(buttonIndex) {
+// Update navigation indicator
+function updateIndicator(index) {
     const indicator = document.getElementById('navIndicator');
     const buttons = document.querySelectorAll('.nav-btn');
-    const btn = buttons[buttonIndex];
+    const btn = buttons[index];
     indicator.style.width = btn.offsetWidth + 'px';
     indicator.style.left = btn.offsetLeft + 'px';
-}
-
-// Update navigation indicator (kept for compatibility)
-function updateIndicator(index) {
-    const buttonMap = [0, 1, 3, 4, 5, 6];
-    const buttonIndex = buttonMap.indexOf(index);
-    if (buttonIndex !== -1) {
-        updateIndicatorByButton(buttonIndex);
-    }
 }
 
 // Show input modal
@@ -225,31 +191,54 @@ function closeModal() {
 // Submit input
 function submitInput() {
     const value = document.getElementById('modalInput').value.trim();
+    
     if (!value) {
-        showNotification('Please enter a value!', 'warning');
+        showToast('Please enter a suitable ID', 'warning');
         return;
     }
     
-    console.log(`Action: ${currentAction}, Value: ${value}`);
+    // Validate based on action type
+    let isValid = false;
+    let successMessage = '';
     
-    closeModal();
-    
-    // Show appropriate notification based on action
     switch(currentAction) {
         case 'kill':
-            const processName = processData[value] || value;
-            showNotification(`Process "${processName}" (ID: ${value}) has been killed`, 'error');
+            // Check if ID exists in process list
+            if (!availableProcessIds.includes(value)) {
+                showToast('Please enter a suitable ID', 'warning');
+                return;
+            }
+            isValid = true;
+            successMessage = `Process ${value} killed successfully`;
             break;
+            
         case 'start':
-            showNotification(`Process "${value}" has been started`, 'success');
+            // For starting, accept any non-empty application name
+            isValid = true;
+            successMessage = `Application "${value}" started successfully`;
             break;
+            
         case 'killApp':
-            const appName = appData[value] || value;
-            showNotification(`Application "${appName}" (ID: ${value}) has been killed`, 'error');
+            // Check if ID exists in app list
+            if (!availableAppIds.includes(value)) {
+                showToast('Please enter a suitable ID', 'warning');
+                return;
+            }
+            isValid = true;
+            successMessage = `Application ${value} killed successfully`;
             break;
+            
         case 'startApp':
-            showNotification(`Application "${value}" has been started`, 'success');
+            // For starting, accept any non-empty application name
+            isValid = true;
+            successMessage = `Application "${value}" started successfully`;
             break;
+    }
+    
+    if (isValid) {
+        showToast(successMessage, 'success');
+        console.log(`Action: ${currentAction}, Value: ${value}`);
+        closeModal();
     }
 }
 
@@ -261,8 +250,11 @@ function showProcessList() {
         <div class="process-item">Process 1 - ID: 1234</div>
         <div class="process-item">Process 2 - ID: 5678</div>
         <div class="process-item">Process 3 - ID: 9012</div>
+        <div class="process-item">Process 4 - ID: 3456</div>
+        <div class="process-item">Process 5 - ID: 7890</div>
     `;
     setTimeout(() => list.classList.add('show'), 10);
+    showToast('Process list loaded', 'success');
 }
 
 // Show app list
@@ -273,19 +265,22 @@ function showAppList() {
         <div class="process-item">Chrome - ID: 2345</div>
         <div class="process-item">VSCode - ID: 6789</div>
         <div class="process-item">Explorer - ID: 3456</div>
+        <div class="process-item">Notepad - ID: 4567</div>
+        <div class="process-item">Calculator - ID: 8901</div>
     `;
     setTimeout(() => list.classList.add('show'), 10);
+    showToast('Application list loaded', 'success');
 }
 
 // Keylog functions
 function hookKeylog() {
     console.log('Keylogger hooked');
-    showNotification('Start Hooking', 'info');
+    showToast('Keylogger hooked successfully', 'success');
 }
 
 function unhookKeylog() {
     console.log('Keylogger unhooked');
-    showNotification('Start Unhooking', 'info');
+    showToast('Keylogger unhooked', 'success');
 }
 
 function printKeylog() {
@@ -298,82 +293,272 @@ function printKeylog() {
         [2025-12-13 10:30:17] Key pressed: l
         [2025-12-13 10:30:17] Key pressed: o
         [2025-12-13 10:30:18] Key pressed: [Space]
+        [2025-12-13 10:30:19] Key pressed: W
+        [2025-12-13 10:30:19] Key pressed: o
+        [2025-12-13 10:30:20] Key pressed: r
+        [2025-12-13 10:30:20] Key pressed: l
+        [2025-12-13 10:30:21] Key pressed: d
     `;
     setTimeout(() => output.classList.add('show'), 10);
+    showToast('Keylog data retrieved', 'success');
 }
 
-// Screenshot
+// Screenshot functions
 function captureScreenshot() {
     const display = document.getElementById('screenshotDisplay');
-    display.style.display = 'block';
-    display.innerHTML = `
-        <img id="screenshotImage" src="https://via.placeholder.com/600x400/f5f5f0/666?text=Screenshot+Preview" alt="Screenshot" style="display: block; margin-bottom: 15px;">
-        <div style="display: flex; gap: 10px; justify-content: center;">
-            <button class="action-btn" onclick="saveScreenshot()" style="flex: 0 1 auto; min-width: 120px;">Save</button>
-            <button class="action-btn danger" onclick="deleteScreenshot()" style="flex: 0 1 auto; min-width: 120px;">Delete</button>
-        </div>
-    `;
+    const actions = document.getElementById('screenshotActions');
+    
+    display.innerHTML = '<img src="https://via.placeholder.com/600x400/f5f5f0/666?text=Screenshot+Preview" alt="Screenshot">';
     setTimeout(() => display.classList.add('show'), 10);
+    
+    actions.style.display = 'flex';
+    showToast('Screenshot captured', 'success');
 }
 
 function saveScreenshot() {
-    console.log('Screenshot saved');
-    // Add save logic here - send to backend or download
-    showNotification('Screenshot saved successfully!', 'success');
+    showToast('Screenshot saved successfully', 'success');
 }
 
 function deleteScreenshot() {
-    showConfirm('Are you sure you want to delete this screenshot?', () => {
-        console.log('Screenshot deleted');
-        const display = document.getElementById('screenshotDisplay');
-        display.classList.remove('show');
-        setTimeout(() => {
-            display.style.display = 'none';
-            display.innerHTML = '';
-        }, 400);
-        showNotification('Screenshot deleted!', 'info');
-    });
+    showConfirm(
+        'Delete Screenshot',
+        'Are you sure you want to delete this screenshot?',
+        () => {
+            const display = document.getElementById('screenshotDisplay');
+            const actions = document.getElementById('screenshotActions');
+            
+            display.classList.remove('show');
+            setTimeout(() => {
+                display.innerHTML = '';
+                actions.style.display = 'none';
+            }, 400);
+            
+            showToast('Screenshot deleted', 'success');
+        }
+    );
 }
 
-// Webcam
+// Webcam functions
 function startWebcam() {
+    const video = document.getElementById('webcamVideo');
+    const liveIndicator = document.getElementById('liveIndicator');
+    
+    // Show video immediately
+    video.classList.add('active');
+    liveIndicator.classList.add('active');
+    
+    // Play video
+    video.play().catch(err => {
+        console.log('Video autoplay failed:', err);
+    });
+    
     console.log('Webcam recording started');
-    const display = document.getElementById('webcamDisplay');
-    display.style.display = 'block';
-    display.innerHTML = '<video id="webcamVideo" width="600" autoplay style="background: #000; border-radius: 10px;"><source src="" type="video/mp4">Webcam stream will appear here...</video>';
-    setTimeout(() => display.classList.add('show'), 10);
+    showToast('Webcam streaming started - Live', 'success');
 }
 
 function endWebcam() {
+    const video = document.getElementById('webcamVideo');
+    const liveIndicator = document.getElementById('liveIndicator');
+    
+    // Hide video
+    video.classList.remove('active');
+    liveIndicator.classList.remove('active');
+    
+    // Pause video
+    video.pause();
+    
     console.log('Webcam recording ended');
-    const display = document.getElementById('webcamDisplay');
-    display.classList.remove('show');
-    setTimeout(() => {
-        display.style.display = 'none';
-        display.innerHTML = '';
-    }, 400);
+    showToast('Webcam streaming ended', 'success');
 }
 
-// Shutdown
+// System Control
 function shutdownServer() {
-    showConfirm('Are you sure you want to shutdown the server?', () => {
-        console.log('Shutting down server...');
-        showNotification('Shutting down server...', 'warning');
-        // Send shutdown command to backend here
-        setTimeout(() => disconnect(), 1000);
-    });
+    showConfirm(
+        'Shut Down Server',
+        'Are you sure you want to shut down the server?',
+        () => {
+            console.log('Shutting down server...');
+            showToast('Server shutdown initiated', 'success');
+            setTimeout(() => disconnect(), 1500);
+        }
+    );
 }
 
-// Restart
 function restartServer() {
-    showConfirm('Are you sure you want to restart the server?', () => {
-        console.log('Restarting server...');
-        showNotification('Restarting server...', 'warning');
-        // Send restart command to backend here
-    });
+    showConfirm(
+        'Restart Server',
+        'Are you sure you want to restart the server?',
+        () => {
+            console.log('Restarting server...');
+            showToast('Server restart initiated', 'success');
+            setTimeout(() => disconnect(), 1500);
+        }
+    );
 }
 
 // Initialize
 window.onload = () => {
     updateStatus(false);
+    
+    // Setup confirm dialog buttons
+    document.getElementById('confirmYes').onclick = () => closeConfirm(true);
+    document.getElementById('confirmNo').onclick = () => closeConfirm(false);
+    
+    // Setup swipe/scroll navigation
+    setupSwipeNavigation();
 };
+
+// Swipe Navigation for Windows
+function setupSwipeNavigation() {
+    const container = document.getElementById('windowsWrapper');
+    const windowsContainer = document.getElementById('windowsWrapper').parentElement;
+    
+    // Mouse events
+    let mouseDown = false;
+    let startX;
+    let scrollLeft;
+    
+    windowsContainer.addEventListener('mousedown', (e) => {
+        // Allow vertical scrolling in window content
+        if (e.target.closest('.window-content')) return;
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+        
+        mouseDown = true;
+        startX = e.pageX;
+        touchStartX = e.pageX;
+        isDragging = false;
+        container.style.transition = 'none';
+    });
+    
+    windowsContainer.addEventListener('mousemove', (e) => {
+        if (!mouseDown) return;
+        e.preventDefault();
+        isDragging = true;
+        const x = e.pageX;
+        const walk = (x - startX) * 2;
+        const newTransform = -currentWindow * window.innerWidth + walk;
+        container.style.transform = `translateX(${newTransform}px)`;
+    });
+    
+    windowsContainer.addEventListener('mouseup', (e) => {
+        if (!mouseDown) return;
+        mouseDown = false;
+        touchEndX = e.pageX;
+        container.style.transition = 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)';
+        
+        if (isDragging) {
+            handleSwipe();
+        }
+    });
+    
+    windowsContainer.addEventListener('mouseleave', () => {
+        if (mouseDown) {
+            mouseDown = false;
+            container.style.transition = 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)';
+            navigateTo(currentWindow);
+        }
+    });
+    
+    // Touch events
+    let touchStartY = 0;
+    let isVerticalScroll = false;
+    
+    windowsContainer.addEventListener('touchstart', (e) => {
+        if (e.target.tagName === 'BUTTON' || e.target.tagName === 'INPUT') return;
+        touchStartX = e.touches[0].clientX;
+        touchStartY = e.touches[0].clientY;
+        isDragging = false;
+        isVerticalScroll = false;
+        container.style.transition = 'none';
+    });
+    
+    windowsContainer.addEventListener('touchmove', (e) => {
+        const touchCurrentX = e.touches[0].clientX;
+        const touchCurrentY = e.touches[0].clientY;
+        const diffX = Math.abs(touchCurrentX - touchStartX);
+        const diffY = Math.abs(touchCurrentY - touchStartY);
+        
+        // Determine if it's a vertical or horizontal scroll
+        if (!isDragging && !isVerticalScroll) {
+            if (diffY > diffX && diffY > 10) {
+                isVerticalScroll = true;
+                return; // Allow vertical scrolling
+            } else if (diffX > 10) {
+                isDragging = true;
+            }
+        }
+        
+        if (isDragging && !isVerticalScroll) {
+            e.preventDefault();
+            const x = touchCurrentX;
+            const walk = (x - touchStartX) * 1.5;
+            const newTransform = -currentWindow * window.innerWidth + walk;
+            container.style.transform = `translateX(${newTransform}px)`;
+        }
+    }, { passive: false });
+    
+    windowsContainer.addEventListener('touchend', (e) => {
+        if (isVerticalScroll) {
+            isVerticalScroll = false;
+            return;
+        }
+        
+        touchEndX = e.changedTouches[0].clientX;
+        container.style.transition = 'transform 0.8s cubic-bezier(0.34, 1.56, 0.64, 1)';
+        
+        if (isDragging) {
+            handleSwipe();
+        }
+    });
+    
+    // Wheel/scroll event - only for horizontal navigation when not scrolling content
+    windowsContainer.addEventListener('wheel', (e) => {
+        // Check if target is scrollable content
+        const target = e.target.closest('.window-content, .process-list, .keylog-output');
+        
+        if (target) {
+            // Allow natural vertical scrolling in content areas
+            return;
+        }
+        
+        if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+            // Horizontal scroll
+            e.preventDefault();
+            if (e.deltaX > 30 && currentWindow < 5) {
+                navigateTo(currentWindow + 1);
+            } else if (e.deltaX < -30 && currentWindow > 0) {
+                navigateTo(currentWindow - 1);
+            }
+        } else if (Math.abs(e.deltaY) > 80) {
+            // Strong vertical scroll converted to horizontal navigation
+            // Only when not over scrollable content
+            e.preventDefault();
+            if (e.deltaY > 0 && currentWindow < 5) {
+                navigateTo(currentWindow + 1);
+            } else if (e.deltaY < 0 && currentWindow > 0) {
+                navigateTo(currentWindow - 1);
+            }
+        }
+    }, { passive: false });
+}
+
+function handleSwipe() {
+    const swipeThreshold = 100;
+    const diff = touchStartX - touchEndX;
+    
+    if (Math.abs(diff) > swipeThreshold) {
+        if (diff > 0 && currentWindow < 5) {
+            // Swipe left - go to next window
+            navigateTo(currentWindow + 1);
+        } else if (diff < 0 && currentWindow > 0) {
+            // Swipe right - go to previous window
+            navigateTo(currentWindow - 1);
+        } else {
+            // Not enough windows, return to current
+            navigateTo(currentWindow);
+        }
+    } else {
+        // Swipe too small, return to current window
+        navigateTo(currentWindow);
+    }
+}
