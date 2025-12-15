@@ -14,4 +14,13 @@ obj/
 .vscode/
 
 # ===== Logs =====
+fileKeyLog.txt
 *.log
+
+# ===== Pictures =====
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
