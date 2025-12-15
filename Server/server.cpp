@@ -461,7 +461,7 @@ static LRESULT CALLBACK FrameCallback(HWND hWnd, LPVIDEOHDR lpVH) {
     // 1. Gửi Magic Number (Header) để đánh dấu bắt đầu frame
     int magic = 0xFFFFFFFF; 
     send(clientSocket, (char*)&magic, sizeof(magic), 0);
-    
+
     // Send frame size (binary DWORD)
     int iResult = send(clientSocket, (char*)&dataSize, sizeof(dataSize), 0);
     if (iResult == SOCKET_ERROR) {
@@ -564,7 +564,6 @@ void webcam() {
             if (streaming) {
                 streaming = false;
                 isRecording = false;
-                sendLine("STOPPED");
             } else {
                 sendLine("ERROR: Not streaming");
             }
