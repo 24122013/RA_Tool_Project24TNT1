@@ -1,3 +1,4 @@
+#define _CRT_SECURE_NO_WARNINGS
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
@@ -346,10 +347,13 @@ void displayStreamingWindow() {
     ShowWindow(streamWindow, SW_SHOW);
     UpdateWindow(streamWindow);
 
-    // Set socket recv timeout to avoid blocking forever
-    int timeoutMs = 3000;
-    setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeoutMs, sizeof(timeoutMs));
+    // Optimize socket settings for streaming (based on TestRTSP)
+    char opt = 1;
+    setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+    int recvBuff = 512 * 1024; // 512KB receive buffer
+    setsockopt(clientSocket, SOL_SOCKET, SO_RCVBUF, (char*)&recvBuff, sizeof(recvBuff));
 
+    vector<char> buffer;
     int frameCount = 0;
     auto startTime = chrono::high_resolution_clock::now();
 
@@ -368,69 +372,61 @@ void displayStreamingWindow() {
         }
         if (!isStreaming || !streamWindow) break;
 
-        // Read size line (server sends ASCII + '\n')
-        string sizeStr = receiveLine();
-        if (!isStreaming) break;
-        if (sizeStr.empty()) {
-            // no data yet, small sleep
-            this_thread::sleep_for(chrono::milliseconds(1));
-            continue;
-        }
-        if (sizeStr == "STOPPED") {
+        // Receive frame size (binary DWORD, not ASCII)
+        DWORD frameSize = 0;
+        int n = recv(clientSocket, (char*)&frameSize, sizeof(frameSize), MSG_WAITALL);
+        if (n <= 0) {
+            // Connection closed or error
             isStreaming = false;
             break;
         }
 
-        int frameSize = 0;
-        try {
-            frameSize = stoi(sizeStr);
-        } catch (...) {
-            // malformed line, skip
-            this_thread::sleep_for(chrono::milliseconds(1));
-            continue;
-        }
-        if (frameSize <= 0 || frameSize > 2 * 1024 * 1024) {
-            // guard
-            this_thread::sleep_for(chrono::milliseconds(1));
+        // Validate frame size
+        if (frameSize < 1024 || frameSize > 2 * 1024 * 1024) {
+            // Invalid frame size, skip
             continue;
         }
 
-        // Receive frame payload
-        vector<char> frameData(frameSize);
+        // Resize buffer if needed
+        if (buffer.size() < frameSize) {
+            buffer.resize(frameSize);
+        }
+
+        // Receive frame data
         int totalReceived = 0;
-        while (totalReceived < frameSize && isStreaming) {
-            int r = recv(clientSocket, frameData.data() + totalReceived, frameSize - totalReceived, 0);
-            if (r <= 0) {
-                // timeout or closed; break this frame
+        while (totalReceived < (int)frameSize && isStreaming) {
+            n = recv(clientSocket, buffer.data() + totalReceived, frameSize - totalReceived, 0);
+            if (n <= 0) {
+                isStreaming = false;
                 break;
             }
-            totalReceived += r;
+            totalReceived += n;
         }
-        if (!isStreaming) break;
-        if (totalReceived != frameSize) {
-            // partial frame; skip
-            this_thread::sleep_for(chrono::milliseconds(1));
-            continue;
-        }
+        if (!isStreaming || totalReceived != (int)frameSize) break;
 
-        // Decode JPEG and draw
-        IStream* pStream = SHCreateMemStream((BYTE*)frameData.data(), frameSize);
-        if (pStream) {
-            Bitmap* bitmap = Bitmap::FromStream(pStream);
-            if (bitmap && bitmap->GetLastStatus() == Ok) {
-                RECT rect;
-                GetClientRect(streamWindow, &rect);
-                int width = rect.right - rect.left;
-                int height = rect.bottom - rect.top;
+        // Decode JPEG from memory using GDI+
+        IStream* pStream = NULL;
+        if (CreateStreamOnHGlobal(NULL, TRUE, &pStream) == S_OK) {
+            // Write data to stream
+            ULONG bytesWritten;
+            pStream->Write(buffer.data(), frameSize, &bytesWritten);
+            
+            // Reset stream position to beginning
+            LARGE_INTEGER li = {0};
+            pStream->Seek(li, STREAM_SEEK_SET, NULL);
 
+            // Load and draw image
+            Image* newImage = new Image(pStream);
+            
+            if (newImage && newImage->GetLastStatus() == Ok) {
+                // Draw image to window
                 HDC hdc = GetDC(streamWindow);
                 if (hdc) {
                     Graphics graphics(hdc);
-                    graphics.SetInterpolationMode(InterpolationModeHighQualityBicubic);
-                    graphics.DrawImage(bitmap, 0, 0, width, height);
+                    graphics.DrawImage(newImage, 0, 0, 640, 480);
                     ReleaseDC(streamWindow, hdc);
                 }
-                delete bitmap;
+                delete newImage;
 
                 frameCount++;
                 if (frameCount % 30 == 0) {
@@ -444,11 +440,12 @@ void displayStreamingWindow() {
                          << " | Frames: " << frameCount << "\r";
                     cout.flush();
                 }
+            } else {
+                if (newImage) delete newImage;
             }
+            
             pStream->Release();
         }
-
-        this_thread::sleep_for(chrono::milliseconds(1));
     }
 
     cout << "\n[Streaming] Total frames received: " << frameCount << endl;
