@@ -82,7 +82,66 @@ void receiveSignal(string& s) {
         s = "QUIT";
     }
 }
+static std::atomic<bool> keepBroadcast(true);
+std::string GetRealLocalIP() {
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s == INVALID_SOCKET) return "";
+    sockaddr_in remote;
+    remote.sin_family = AF_INET;
+    remote.sin_port = htons(53);
+    inet_pton(AF_INET, "8.8.8.8", &remote.sin_addr);
+    if (connect(s, (sockaddr*)&remote, sizeof(remote)) == SOCKET_ERROR) {
+        closesocket(s);
+        return "";
+    }
+    sockaddr_in name;
+    int namelen = sizeof(name);
+    if (getsockname(s, (sockaddr*)&name, &namelen) == SOCKET_ERROR) {
+        closesocket(s);
+        return "";
+    }
+    char buf[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &name.sin_addr, buf, INET_ADDRSTRLEN);
+    closesocket(s);
+    return std::string(buf);
+}
 
+void BroadcastServerInfo() {
+    std::string realIP = GetRealLocalIP();
+    if (realIP.empty()) return;
+
+    // Socket để broadcast
+    SOCKET bcast = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (bcast == INVALID_SOCKET) return;
+
+    char opt = 1;
+    setsockopt(bcast, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
+
+    sockaddr_in src = {};
+    src.sin_family = AF_INET;
+    src.sin_port = 0;
+    inet_pton(AF_INET, realIP.c_str(), &src.sin_addr);
+    bind(bcast, (sockaddr*)&src, sizeof(src));
+
+    sockaddr_in dest = {};
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(5656);  // Sửa từ 5657 -> 5656 để khớp với client
+    dest.sin_addr.s_addr = INADDR_BROADCAST;
+
+    char hostname[256];
+    gethostname(hostname, sizeof(hostname));
+    std::string message = "IP:" + realIP + "|Name:" + std::string(hostname);
+
+    std::cout << "Broadcasting server info: " << message << std::endl;
+
+    while (keepBroadcast) {
+        // Broadcast liên tục mỗi 2 giây
+        sendto(bcast, message.c_str(), (int)message.length(), 0, (sockaddr*)&dest, sizeof(dest));
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    }
+
+    closesocket(bcast);
+}
 // System Control Functions
 void shutdown() {
     system("shutdown /s /t 0");
@@ -425,108 +484,154 @@ void applicationManagement() {
     }
 }
 
-// Webcam Recording
-void webcam() {
-    string videoPath = "temp_video.avi";
-    string cmd;
-    bool recording = false;
+// Helper function to get JPEG encoder CLSID
+int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
+    UINT num = 0;
+    UINT size = 0;
+    GetImageEncodersSize(&num, &size);
+    if (size == 0) return -1;
     
+    ImageCodecInfo* pImageCodecInfo = (ImageCodecInfo*)(malloc(size));
+    if (pImageCodecInfo == NULL) return -1;
+    
+    GetImageEncoders(num, size, pImageCodecInfo);
+    for (UINT j = 0; j < num; ++j) {
+        if (wcscmp(pImageCodecInfo[j].MimeType, format) == 0) {
+            *pClsid = pImageCodecInfo[j].Clsid;
+            free(pImageCodecInfo);
+            return j;
+        }
+    }
+    free(pImageCodecInfo);
+    return -1;
+}
+
+// Frame callback for fast MJPG streaming (based on TestRTSP)
+static LRESULT CALLBACK FrameCallback(HWND hWnd, LPVIDEOHDR lpVH) {
+    if (clientSocket == INVALID_SOCKET) return 0;
+    if (!isRecording) return 0;
+
+    // Get frame size from camera
+    DWORD dataSize = lpVH->dwBytesUsed;
+    
+    // Skip invalid frames
+    if (dataSize < 1024) return 0;
+    
+    // 1. Gửi Magic Number (Header) để đánh dấu bắt đầu frame
+    int magic = 0xFFFFFFFF; 
+    send(clientSocket, (char*)&magic, sizeof(magic), 0);
+
+    // Send frame size (binary DWORD)
+    int iResult = send(clientSocket, (char*)&dataSize, sizeof(dataSize), 0);
+    if (iResult == SOCKET_ERROR) {
+        isRecording = false;
+        return 0;
+    }
+
+    // Send frame data directly (MJPG compressed from camera)
+    iResult = send(clientSocket, (char*)lpVH->lpData, dataSize, 0);
+    if (iResult == SOCKET_ERROR) {
+        isRecording = false;
+    }
+
+    return (LRESULT)TRUE;
+}
+
+// Webcam Streaming - optimized with MJPG passthrough (no re-encoding)
+void webcam() {
+    string cmd;
+    bool streaming = false;
+
     while (true) {
         receiveSignal(cmd);
-        
+
         if (cmd == "START") {
-            if (!recording) {
-                remove(videoPath.c_str());
-                
-                // Start recording in background thread
-                thread recordThread([&]() {
-                    const char* windowName = "Webcam";
-                    hCapture = capCreateCaptureWindowA(windowName, 0, 0, 0, 320, 240, NULL, 0);
+            if (!streaming) {
+                streaming = true;
+                sendLine("OK");
+
+                thread streamThread([&]() {
+                    // Create hidden capture window
+                    hCapture = capCreateCaptureWindowA("WebcamCap",
+                                                       WS_POPUP, 0, 0, 640, 480,
+                                                       NULL, 0);
+                    if (!hCapture) {
+                        streaming = false;
+                        sendLine("STOPPED");
+                        return;
+                    }
+
+                    if (!SendMessage(hCapture, WM_CAP_DRIVER_CONNECT, 0, 0)) {
+                        DestroyWindow(hCapture);
+                        hCapture = NULL;
+                        streaming = false;
+                        sendLine("STOPPED");
+                        return;
+                    }
+
+                    // Force MJPG format for direct passthrough
+                    BITMAPINFO bmpInfo = {0};
+                    bmpInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+                    bmpInfo.bmiHeader.biWidth = 640;
+                    bmpInfo.bmiHeader.biHeight = 480;
+                    bmpInfo.bmiHeader.biPlanes = 1;
+                    bmpInfo.bmiHeader.biBitCount = 24;
+                    bmpInfo.bmiHeader.biCompression = MAKEFOURCC('M', 'J', 'P', 'G');
+                    bmpInfo.bmiHeader.biSizeImage = 640 * 480 * 3;
+                    
+                    if (!SendMessage(hCapture, WM_CAP_SET_VIDEOFORMAT, sizeof(BITMAPINFOHEADER), (LPARAM)&bmpInfo)) {
+                        // Camera may not support MJPG, fallback to default
+                    }
+
+                    // Optimize socket for streaming
+                    char opt = 1;
+                    setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
+                    int sendBuff = 1024 * 1024; // 1MB send buffer
+                    setsockopt(clientSocket, SOL_SOCKET, SO_SNDBUF, (char*)&sendBuff, sizeof(sendBuff));
+
+                    // Set up frame callback for direct passthrough
+                    SendMessage(hCapture, WM_CAP_SET_CALLBACK_FRAME, 0, (LPARAM)FrameCallback);
+                    SendMessage(hCapture, WM_CAP_SET_PREVIEWRATE, 1, 0);
+                    SendMessage(hCapture, WM_CAP_SET_PREVIEW, TRUE, 0);
+
+                    isRecording = true;
+
+                    // Keep grabbing frames while streaming
+                    while (streaming && isRecording) {
+                        SendMessage(hCapture, WM_CAP_GRAB_FRAME_NOSTOP, 0, 0);
+                        // No sleep - run at maximum camera speed (typically 30fps)
+                    }
+
+                    // Cleanup
+                    isRecording = false;
+                    
                     if (hCapture) {
-                        SendMessage(hCapture, WM_CAP_DRIVER_CONNECT, 0, 0);
-                        SendMessage(hCapture, WM_CAP_FILE_SET_CAPTURE_FILEA, 0, (LPARAM)(const char*)videoPath.c_str());
-                        
-                        CAPTUREPARMS params = {0};
-                        params.dwRequestMicroSecPerFrame = 66667; // ~15fps
-                        params.fYield = TRUE;
-                        params.fAbortLeftMouse = FALSE;
-                        params.fAbortRightMouse = FALSE;
-                        params.vKeyAbort = 0;
-                        params.fLimitEnabled = FALSE;
-                        
-                        int structSize = sizeof(CAPTUREPARMS);
-                        SendMessage(hCapture, WM_CAP_SET_SEQUENCE_SETUP, structSize, (LPARAM)&params);
-                        SendMessage(hCapture, WM_CAP_SEQUENCE, 0, 0);
+                        SendMessage(hCapture, WM_CAP_SET_CALLBACK_FRAME, 0, 0);
+                        SendMessage(hCapture, WM_CAP_SET_PREVIEW, FALSE, 0);
+                        SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
+                        DestroyWindow(hCapture);
+                        hCapture = NULL;
                     }
                 });
-                recordThread.detach();
-                
-                recording = true;
-                sendLine("Server: Da bat dau quay video...");
+                streamThread.detach();
+
             } else {
-                sendLine("Server: Dang quay roi!");
+                sendLine("ERROR: Already streaming");
             }
+
         } else if (cmd == "STOP") {
-            if (recording) {
-                if (hCapture) {
-                    SendMessage(hCapture, WM_CAP_STOP, 0, 0);
-                    SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
-                    DestroyWindow(hCapture);
-                    hCapture = NULL;
-                }
-                recording = false;
-                
-                Sleep(2000); // Wait for file to be ready
-                
-                // Try to read the file
-                bool fileReady = false;
-                for (int i = 0; i < 15; i++) {
-                    ifstream file(videoPath, ios::binary | ios::ate);
-                    if (file.is_open()) {
-                        streamsize size = file.tellg();
-                        if (size > 1024) {
-                            fileReady = true;
-                            file.close();
-                            break;
-                        }
-                        file.close();
-                    }
-                    Sleep(500);
-                }
-                
-                if (fileReady) {
-                    ifstream file(videoPath, ios::binary | ios::ate);
-                    streamsize size = file.tellg();
-                    file.seekg(0, ios::beg);
-                    
-                    char* buffer = new char[size];
-                    if (file.read(buffer, size)) {
-                        sendLine("OK");
-                        sendLine(to_string(size));
-                        send(clientSocket, buffer, size, 0);
-                    }
-                    
-                    delete[] buffer;
-                    file.close();
-                    remove(videoPath.c_str());
-                } else {
-                    sendLine("Loi: File video khong san sang. Hay thu lai.");
-                }
+            if (streaming) {
+                streaming = false;
+                isRecording = false;
             } else {
-                sendLine("Loi: Chua bat dau quay!");
+                sendLine("ERROR: Not streaming");
             }
+
         } else if (cmd == "QUIT") {
-            if (recording && hCapture) {
-                SendMessage(hCapture, WM_CAP_STOP, 0, 0);
-                SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
-                DestroyWindow(hCapture);
-                hCapture = NULL;
-            }
             return;
         }
     }
 }
-
 // Main Server Function
 int main() {
     WSADATA wsaData;
@@ -535,6 +640,9 @@ int main() {
         return 1;
     }
     
+    // start broadcast thread so clients can discover this server
+    std::thread(BroadcastServerInfo).detach();
+
     serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (serverSocket == INVALID_SOCKET) {
         cerr << "Socket creation failed" << endl;
@@ -594,6 +702,8 @@ int main() {
         }
     }
     
+    // stop broadcast loop and cleanup
+    keepBroadcast = false;
     closesocket(clientSocket);
     closesocket(serverSocket);
     WSACleanup();
