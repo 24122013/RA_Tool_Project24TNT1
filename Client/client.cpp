@@ -144,6 +144,23 @@ void screenshotMenu() {
         }
     }
 }
+int receiveCountSafe() {
+    string countStr = receiveLine();
+    try {
+        return stoi(countStr);
+    } catch (...) {
+        cout << "[debug] invalid count received: '" << countStr << "'\n";
+        // thử đọc thêm 1 dòng nếu server có gửi header thừa
+        countStr = receiveLine();
+        cout << "[debug] retry count received: '" << countStr << "'\n";
+        try {
+            return stoi(countStr);
+        } catch (...) {
+            cout << "[debug] still invalid. returning 0.\n";
+            return 0;
+        }
+    }
+}
 
 // Process Management
 void processMenu() {
@@ -165,8 +182,9 @@ void processMenu() {
         if (choice == "1") {
             sendLine("XEM");
             
-            string countStr = receiveLine();
-            int count = stoi(countStr);
+            // string countStr = receiveLine();
+            // int count = stoi(countStr);
+            int count = receiveCountSafe();
             
             cout << "\n----- PROCESS LIST -----\n";
             cout << left << setw(40) << "Name" << setw(10) << "PID" << setw(10) << "Threads" << endl;
@@ -236,8 +254,9 @@ void applicationMenu() {
         if (choice == "1") {
             sendLine("XEM");
             
-            string countStr = receiveLine();
-            int count = stoi(countStr);
+            // string countStr = receiveLine();
+            // int count = stoi(countStr);
+            int count = receiveCountSafe();
             
             cout << "\n----- APPLICATION LIST -----\n";
             cout << left << setw(40) << "Name" << setw(10) << "PID" << setw(10) << "Threads" << endl;
