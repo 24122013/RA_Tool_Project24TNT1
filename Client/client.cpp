@@ -8,6 +8,7 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <iomanip>
 #include <thread>
 #include <chrono>
@@ -552,6 +553,93 @@ int main() {
         return 1;
     }
     
+    // --- START: Server discovery via UDP broadcast (select by index) ---
+    const int DISCOVERY_PORT = 5656;
+    
+    string serverIP;
+    SOCKET udpSock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (udpSock == INVALID_SOCKET) {
+        cerr << "UDP socket creation failed" << endl;
+        WSACleanup();
+        return 1;
+    }
+
+    // Bind để lắng nghe broadcast từ server
+    sockaddr_in recvAddr;
+    recvAddr.sin_family = AF_INET;
+    recvAddr.sin_port = htons(DISCOVERY_PORT);
+    recvAddr.sin_addr.s_addr = INADDR_ANY;
+
+    if (bind(udpSock, (sockaddr*)&recvAddr, sizeof(recvAddr)) == SOCKET_ERROR) {
+        cerr << "Bind failed, proceeding with manual entry..." << endl;
+        closesocket(udpSock);
+        cout << "Enter server IP address: ";
+        getline(cin, serverIP);
+    } else {
+        // Lắng nghe broadcast từ server trong 1 giây
+        std::vector<std::string> found_ips;
+        std::vector<std::string> found_msgs;
+
+        // Set timeout 1 giây để nhanh
+        int timeout_ms = 5000;
+        setsockopt(udpSock, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout_ms, sizeof(timeout_ms));
+
+        cout << "Scanning LAN for active servers..." << endl;
+        
+        char buf[1024];
+        sockaddr_in sender;
+        int senderLen = sizeof(sender);
+
+        // Thu thập broadcast trong 1 giây
+        auto startTime = std::chrono::steady_clock::now();
+        while (true) {
+            int bytes = recvfrom(udpSock, buf, (int)sizeof(buf)-1, 0, (sockaddr*)&sender, &senderLen);
+            if (bytes == SOCKET_ERROR) {
+                break; // Timeout hoặc lỗi -> thoát ngay
+            }
+            
+            buf[bytes] = '\0';
+            std::string ip = inet_ntoa(sender.sin_addr);
+            std::string msg = buf;
+            
+            // Chỉ thêm IP mới chưa có trong danh sách
+            if (std::find(found_ips.begin(), found_ips.end(), ip) == found_ips.end()) {
+                found_ips.push_back(ip);
+                found_msgs.push_back(msg);
+                cout << "[" << found_ips.size() << "] " << ip << "  --> " << msg << endl;
+            }
+            
+            // Kiểm tra đã hết 1 giây chưa
+            auto now = std::chrono::steady_clock::now();
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now - startTime).count() >= 1000) {
+                break;
+            }
+        }
+
+        closesocket(udpSock);
+
+        // Cho phép chọn server hoặc nhập IP thủ công
+        if (!found_ips.empty()) {
+            cout << "\n========================================" << endl;
+            cout << "Found " << found_ips.size() << " server(s)." << endl;
+            cout << "Select server index (1-" << found_ips.size() << ") or 0 to enter IP manually: ";
+            int idx = -1;
+            cin >> idx;
+            cin.ignore();
+            
+            if (idx > 0 && idx <= (int)found_ips.size()) {
+                serverIP = found_ips[idx - 1];
+                cout << "Selected: " << serverIP << endl;
+            } else {
+                cout << "Enter server IP address: ";
+                getline(cin, serverIP);
+            }
+        } else {
+            cout << "\nNo servers discovered. Enter server IP address: ";
+            getline(cin, serverIP);
+        }
+    }
+    // --- END: discovery ---
     clientSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (clientSocket == INVALID_SOCKET) {
         cerr << "Socket creation failed" << endl;
@@ -559,16 +647,12 @@ int main() {
         return 1;
     }
     
-    string serverIP;
-    cout << "Enter server IP address (or 127.0.0.1 for localhost): ";
-    getline(cin, serverIP);
-    
     sockaddr_in serverAddr;
     serverAddr.sin_family = AF_INET;
     inet_pton(AF_INET, serverIP.c_str(), &serverAddr.sin_addr);
     serverAddr.sin_port = htons(5656);
     
-    cout << "Connecting to server...\n";
+    cout << "Connecting to server " << serverIP << "...\n";
     if (connect(clientSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
         cerr << "Connection failed. Is the server running?\n";
         closesocket(clientSocket);

@@ -82,7 +82,66 @@ void receiveSignal(string& s) {
         s = "QUIT";
     }
 }
+static std::atomic<bool> keepBroadcast(true);
+std::string GetRealLocalIP() {
+    SOCKET s = socket(AF_INET, SOCK_DGRAM, 0);
+    if (s == INVALID_SOCKET) return "";
+    sockaddr_in remote;
+    remote.sin_family = AF_INET;
+    remote.sin_port = htons(53);
+    inet_pton(AF_INET, "8.8.8.8", &remote.sin_addr);
+    if (connect(s, (sockaddr*)&remote, sizeof(remote)) == SOCKET_ERROR) {
+        closesocket(s);
+        return "";
+    }
+    sockaddr_in name;
+    int namelen = sizeof(name);
+    if (getsockname(s, (sockaddr*)&name, &namelen) == SOCKET_ERROR) {
+        closesocket(s);
+        return "";
+    }
+    char buf[INET_ADDRSTRLEN];
+    inet_ntop(AF_INET, &name.sin_addr, buf, INET_ADDRSTRLEN);
+    closesocket(s);
+    return std::string(buf);
+}
 
+void BroadcastServerInfo() {
+    std::string realIP = GetRealLocalIP();
+    if (realIP.empty()) return;
+
+    // Socket để broadcast
+    SOCKET bcast = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+    if (bcast == INVALID_SOCKET) return;
+
+    char opt = 1;
+    setsockopt(bcast, SOL_SOCKET, SO_BROADCAST, &opt, sizeof(opt));
+
+    sockaddr_in src = {};
+    src.sin_family = AF_INET;
+    src.sin_port = 0;
+    inet_pton(AF_INET, realIP.c_str(), &src.sin_addr);
+    bind(bcast, (sockaddr*)&src, sizeof(src));
+
+    sockaddr_in dest = {};
+    dest.sin_family = AF_INET;
+    dest.sin_port = htons(5656);  // Sửa từ 5657 -> 5656 để khớp với client
+    dest.sin_addr.s_addr = INADDR_BROADCAST;
+
+    char hostname[256];
+    gethostname(hostname, sizeof(hostname));
+    std::string message = "IP:" + realIP + "|Name:" + std::string(hostname);
+
+    std::cout << "Broadcasting server info: " << message << std::endl;
+
+    while (keepBroadcast) {
+        // Broadcast liên tục mỗi 2 giây
+        sendto(bcast, message.c_str(), (int)message.length(), 0, (sockaddr*)&dest, sizeof(dest));
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+    }
+
+    closesocket(bcast);
+}
 // System Control Functions
 void shutdown() {
     system("shutdown /s /t 0");
@@ -597,6 +656,9 @@ int main() {
         return 1;
     }
     
+    // start broadcast thread so clients can discover this server
+    std::thread(BroadcastServerInfo).detach();
+
     serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (serverSocket == INVALID_SOCKET) {
         cerr << "Socket creation failed" << endl;
@@ -656,6 +718,8 @@ int main() {
         }
     }
     
+    // stop broadcast loop and cleanup
+    keepBroadcast = false;
     closesocket(clientSocket);
     closesocket(serverSocket);
     WSACleanup();
