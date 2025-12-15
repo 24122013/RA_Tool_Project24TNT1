@@ -372,7 +372,7 @@ void displayStreamingWindow() {
     setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
     int recvBuff = 512 * 1024; // 512KB receive buffer
     setsockopt(clientSocket, SOL_SOCKET, SO_RCVBUF, (char*)&recvBuff, sizeof(recvBuff));
-    DWORD timeout = 2000; // 2 giây
+    DWORD timeout = 5000; // 2 giây
     setsockopt(clientSocket, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
     vector<char> buffer;
     int frameCount = 0;
