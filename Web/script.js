@@ -477,7 +477,6 @@ function unhookKeylog() {
 }
 
 function printKeylog() {
-    if(isInSubMenu) { ws.send("CMD|QUIT"); isInSubMenu=false; }
     
     parsingMode = 'KEYLOG'; 
     const output = document.getElementById('keylogOutput');
