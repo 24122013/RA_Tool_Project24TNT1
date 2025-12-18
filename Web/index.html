@@ -76,11 +76,14 @@
                 <button class="nav-btn" onclick="navigateTo(3)">Screenshot</button>
                 <button class="nav-btn" onclick="navigateTo(4)">Webcam</button>
                 <button class="nav-btn" onclick="navigateTo(5)">Chat</button>
-                <button class="nav-btn" onclick="navigateTo(6)">System Info</button>
-                <button class="nav-btn" onclick="navigateTo(7)">System Control</button>
-                <button class="nav-btn" onclick="disconnect()">Disconnect</button>
+                <button class="nav-btn" onclick="navigateTo(6)">File Manager</button>
+                <button class="nav-btn" onclick="navigateTo(7)">System Info</button>
+                <button class="nav-btn" onclick="navigateTo(8)">System Control</button>
             </div>
         </div>
+
+        <!-- Disconnect Button (Bottom Right) -->
+        <button class="btn-disconnect-corner" onclick="disconnect()">✕ Disconnect</button>
 
         <!-- Windows -->
         <div class="windows-container">
@@ -175,6 +178,25 @@
                     </div>
                 </div>
                 
+                <!-- File Manager Window -->
+                <div class="window">
+                    <div class="window-content">
+                        <h2>File Manager</h2>
+                        <p style="margin-bottom: 20px; color: #7a7a7a;">Browse and download files from remote server</p>
+                        
+                        <div class="file-path-bar">
+                            <input type="text" id="currentPath" value="C:\\" onclick="this.select()">
+                            <button class="btn-navigate" onclick="navigateToPath()" title="Go to path">➤</button>
+                            <button class="btn-up" onclick="navigateUp()" title="Go up">⬆️</button>
+                            <button class="btn-drives" onclick="listDrives()" title="Show all drives">💾 Drives</button>
+                        </div>
+                        
+                        <div class="file-list" id="fileList">
+                            <div class="loading-text">Click 'Drives' to start browsing...</div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- System Info Window -->
                 <div class="window">
                     <div class="window-content">

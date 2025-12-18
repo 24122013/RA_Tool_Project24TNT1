@@ -13,6 +13,11 @@ let currentItemsReceived = 0;
 let tempRowData = []; 
 let tempInfoHtml = "";
 
+// File Manager Variables
+let currentFilePath = "C:\\\\";
+let pendingFileDownload = null;
+let availableDrives = [];
+
 // --- WEBSOCKET ---
 function initWebSocket() {
     ws = new WebSocket("ws://localhost:8080");
@@ -127,7 +132,43 @@ function handleServerMessage(msg) {
             return;
         }
 
-        // 3. XỬ LÝ DANH SÁCH (PROCESS / APP)
+        // 3. XỬ LÝ DOWNLOAD FILE (PHẢI KIỂM TRA TRƯỚC)
+        if (pendingFileDownload && data.length > 100) {
+            handleFileDownload(data);
+            return;
+        }
+
+        // 4. XỬ LÝ FILE MANAGER - DRIVES LIST
+        if (parsingMode === 'DRIVES') {
+            if (data.trim() === 'DRIVELIST') {
+                document.getElementById('fileList').innerHTML = '';
+                availableDrives = [];
+                return;
+            }
+            if (data.length === 2 && data.endsWith(':')) {
+                availableDrives.push(data);
+                renderDriveItem(data);
+            }
+            return;
+        }
+
+        // 5. XỬ LÝ FILE MANAGER - FILE/FOLDER LIST
+        if (parsingMode === 'FILE') {
+            if (data.trim() === 'FILELIST') {
+                document.getElementById('fileList').innerHTML = '';
+                return;
+            }
+            const parts = data.split('|');
+            if (parts.length === 3) {
+                const type = parts[0];  // DIR hoặc FILE
+                const name = parts[1];
+                const size = parts[2];
+                renderFileItem(type, name, size);
+            }
+            return;
+        }
+
+        // 6. XỬ LÝ DANH SÁCH (PROCESS / APP)
         if (parsingMode === 'PROCESS' || parsingMode === 'APP') {
             if (expectedItems === 0) {
                 if (!isNaN(data.trim()) && parseInt(data.trim()) > 0) {
@@ -424,6 +465,11 @@ function navigateTo(index) {
         setTimeout(() => startChatSession(), 300); // Chat có thể cần init UI
     }
     else if (index === 6) {
+        // Tab File Manager
+        // File Manager không cần vào menu ngay, chờ user click nút
+        console.log("Entered File Manager");
+    }
+    else if (index === 7) {
         // Tab System Info
         fetchSystemInfo();
     }
@@ -433,7 +479,7 @@ function enterNewTab(index) {
     if (index == 5) {
         setTimeout(() => startChatSession(), 50);
     }
-    if (index == 6) {
+    if (index == 7) {
         fetchSystemInfo();
     }
     performUITransition(index);
@@ -534,11 +580,15 @@ function captureScreenshot() {
 function saveScreenshot() {
     const img = document.querySelector('#screenshotDisplay img');
     if (img) {
-        const link = document.createElement('a');
-        link.href = img.src;
-        link.download = `screenshot_${new Date().getTime()}.png`;
-        link.click();
-        showToast("Screenshot saved", "success");
+        // Cho phép người dùng đặt tên file
+        const fileName = prompt("Enter filename:", `screenshot_${new Date().getTime()}`);
+        if (fileName) {
+            const link = document.createElement('a');
+            link.href = img.src;
+            link.download = fileName.endsWith('.png') ? fileName : fileName + '.png';
+            link.click();
+            showToast("Screenshot saved", "success");
+        }
     } else {
         showToast("No image to save", "warning");
     }
@@ -704,4 +754,172 @@ function addChatBubble(text, type) {
     
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
+}
+
+// --- FILE MANAGER FUNCTIONS ---
+function browseFiles(path) {
+    if (!path) path = currentFilePath;
+    
+    // Đảm bảo path kết thúc bằng 1 backslash
+    if (!path.endsWith("\\")) path += "\\";
+    
+    currentFilePath = path;
+    document.getElementById('currentPath').value = path;
+    
+    const fileList = document.getElementById('fileList');
+    fileList.innerHTML = '<div class="loading-text">⟳ Loading...</div>';
+    
+    if (!isInSubMenu) {
+        ws.send("CMD|FILE");
+        isInSubMenu = true;
+        setTimeout(() => {
+            ws.send("CMD|LIST");
+            setTimeout(() => ws.send("CMD|" + path), 100);
+        }, 200);
+    } else {
+        ws.send("CMD|QUIT");
+        setTimeout(() => {
+            ws.send("CMD|FILE");
+            isInSubMenu = true;
+            setTimeout(() => {
+                ws.send("CMD|LIST");
+                setTimeout(() => ws.send("CMD|" + path), 100);
+            }, 200);
+        }, 200);
+    }
+    
+    parsingMode = 'FILE';
+}
+
+function listDrives() {
+    const fileList = document.getElementById('fileList');
+    fileList.innerHTML = '<div class="loading-text">⟳ Loading drives...</div>';
+    
+    if (!isInSubMenu) {
+        ws.send("CMD|FILE");
+        isInSubMenu = true;
+        setTimeout(() => ws.send("CMD|DRIVES"), 200);
+    } else {
+        ws.send("CMD|QUIT");
+        setTimeout(() => {
+            ws.send("CMD|FILE");
+            isInSubMenu = true;
+            setTimeout(() => ws.send("CMD|DRIVES"), 200);
+        }, 200);
+    }
+    
+    parsingMode = 'DRIVES';
+    document.getElementById('currentPath').value = 'My Computer';
+}
+
+function navigateToPath() {
+    const path = document.getElementById('currentPath').value;
+    browseFiles(path);
+}
+
+function navigateUp() {
+    let path = currentFilePath;
+    // Loại bỏ trailing backslash
+    if (path.endsWith("\\")) path = path.slice(0, -1);
+    
+    // Tìm vị trí backslash cuối cùng
+    const lastSlash = path.lastIndexOf("\\");
+    if (lastSlash > 0) {
+        // Quay về thư mục cha
+        path = path.substring(0, lastSlash);
+        browseFiles(path);
+    } else if (path.length > 2) {
+        // Quay về root drive (C:, D:, etc.)
+        browseFiles(path.substring(0, 2));
+    } else {
+        // Đã ở root drive, quay về danh sách drives
+        listDrives();
+    }
+}
+
+function renderFileItem(type, name, size) {
+    const fileList = document.getElementById('fileList');
+    const icon = type === 'DIR' ? '📁' : '📄';
+    const sizeStr = type === 'DIR' ? '' : formatFileSize(parseInt(size));
+    
+    const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    
+    const onclick = type === 'DIR' ? `openFolder('${escapedName}')` : `downloadFile('${escapedName}')`;
+    
+    const html = `
+        <div class="file-row" onclick="${onclick}">
+            <div class="file-icon">${icon}</div>
+            <div class="file-info">
+                <span class="file-name">${name}</span>
+                ${sizeStr ? `<span class="file-size">${sizeStr}</span>` : ''}
+            </div>
+        </div>`;
+    fileList.insertAdjacentHTML('beforeend', html);
+}
+
+function renderDriveItem(driveLetter) {
+    const fileList = document.getElementById('fileList');
+    const icon = '💾';
+    // Drive path: C:, D:, etc. (không có trailing backslash, browseFiles sẽ thêm)
+    const drivePath = driveLetter;
+    
+    const html = `
+        <div class="file-row drive-row" onclick="browseFiles('${drivePath}')">
+            <div class="file-icon">${icon}</div>
+            <div class="file-info">
+                <span class="file-name">Drive ${driveLetter}</span>
+                <span class="file-size">Local Disk</span>
+            </div>
+        </div>`;
+    fileList.insertAdjacentHTML('beforeend', html);
+}
+
+function openFolder(folderName) {
+    // currentFilePath đã có trailing backslash từ browseFiles()
+    let newPath = currentFilePath + folderName;
+    browseFiles(newPath);
+}
+
+function downloadFile(fileName) {
+    // currentFilePath đã có trailing backslash từ browseFiles()
+    let filePath = currentFilePath + fileName;
+    
+    showToast("Downloading " + fileName + "...", "info");
+    pendingFileDownload = fileName;
+    
+    ws.send("CMD|FILE");
+    isInSubMenu = true;
+    setTimeout(() => {
+        ws.send("CMD|DOWNLOAD");
+        setTimeout(() => ws.send("CMD|" + filePath), 100);
+    }, 200);
+}
+
+function handleFileDownload(base64Data) {
+    if (!pendingFileDownload) return;
+    
+    const binaryString = atob(base64Data);
+    const bytes = new Uint8Array(binaryString.length);
+    for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+    }
+    
+    const blob = new Blob([bytes]);
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = pendingFileDownload;
+    link.click();
+    URL.revokeObjectURL(url);
+    
+    showToast("Downloaded: " + pendingFileDownload, "success");
+    pendingFileDownload = null;
+}
+
+function formatFileSize(bytes) {
+    if (bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 }
