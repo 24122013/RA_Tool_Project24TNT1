@@ -240,10 +240,17 @@ void ratReceiverThread()
             // Xử lý download file
             try
             {
+                size_t spacePos = line.find(' ');
+                string sizeStr = line.substr(spacePos + 1);
+                cout << "[FILEDATA] Received header, size: " << sizeStr << " bytes" << endl;
+
                 // Dòng tiếp theo là Base64 data
                 string base64Data = receiveRatLine();
+                cout << "[FILEDATA] Received base64 data, length: " << base64Data.length() << " chars" << endl;
+
                 string json = "{\"type\":\"LOG\", \"data\":\"" + base64Data + "\"}";
                 sendWebFrame(json);
+                cout << "[FILEDATA] Sent to web client" << endl;
             }
             catch (...)
             {

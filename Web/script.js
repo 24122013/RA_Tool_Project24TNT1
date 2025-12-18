@@ -14,9 +14,10 @@ let tempRowData = [];
 let tempInfoHtml = "";
 
 // File Manager Variables
-let currentFilePath = "C:\\\\";
+let currentFilePath = "";
 let pendingFileDownload = null;
 let availableDrives = [];
+let downloadingToast = null;
 
 // --- WEBSOCKET ---
 function initWebSocket() {
@@ -44,6 +45,8 @@ function initWebSocket() {
 }
 
 function handleServerMessage(msg) {
+    console.log("[WS] Received message type:", msg.type, "data length:", msg.data ? msg.data.length : 0);
+    
     if (msg.type === "DISCOVERY") {
         const select = document.getElementById('serverSelect');
         let exists = false;
@@ -83,7 +86,8 @@ function handleServerMessage(msg) {
         return;
     }
     else if (msg.type === "LOG") {
-        const data = msg.data; 
+        const data = msg.data;
+        console.log("[LOG] Data received, length:", data.length, "pendingFileDownload:", pendingFileDownload);
         
         // 1. XỬ LÝ PHẢN HỒI LỆNH (KILL/START SUCCESS)
         if (data.includes("successfully") || data.includes("Error:") || data.includes("Unable to")) {
@@ -133,7 +137,9 @@ function handleServerMessage(msg) {
         }
 
         // 3. XỬ LÝ DOWNLOAD FILE (PHẢI KIỂM TRA TRƯỚC)
-        if (pendingFileDownload && data.length > 100) {
+        if (pendingFileDownload && data.length > 10) {
+            console.log("[DOWNLOAD] Received Base64 data, length:", data.length);
+            console.log("[DOWNLOAD] First 50 chars:", data.substring(0, 50));
             handleFileDownload(data);
             return;
         }
@@ -677,9 +683,9 @@ function restartServer() {
 }
 
 // --- HÀM SHOW TOAST (BỊ THIẾU) ---
-function showToast(message, type = 'info') {
+function showToast(message, type = 'info', persistent = false) {
     const container = document.getElementById('toastContainer');
-    if (!container) return;
+    if (!container) return null;
 
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
@@ -704,13 +710,25 @@ function showToast(message, type = 'info') {
         toast.classList.add('show');
     });
 
-    // Tự động biến mất sau 3 giây
-    setTimeout(() => {
-        toast.classList.remove('show');
+    // Tự động biến mất sau 3 giây (trừ khi persistent = true)
+    if (!persistent) {
         setTimeout(() => {
-            if (container.contains(toast)) container.removeChild(toast);
-        }, 400);
-    }, 3000);
+            toast.classList.remove('show');
+            setTimeout(() => {
+                if (container.contains(toast)) container.removeChild(toast);
+            }, 400);
+        }, 3000);
+    }
+    
+    return toast;
+}
+
+function hideToast(toast) {
+    if (!toast) return;
+    toast.classList.remove('show');
+    setTimeout(() => {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+    }, 400);
 }
 
 // --- CHAT FUNCTIONS ---
@@ -813,7 +831,11 @@ function listDrives() {
 }
 
 function navigateToPath() {
-    const path = document.getElementById('currentPath').value;
+    const path = document.getElementById('currentPath').value.trim();
+    if (!path) {
+        showToast("Please enter a path", "warning");
+        return;
+    }
     browseFiles(path);
 }
 
@@ -884,36 +906,74 @@ function downloadFile(fileName) {
     // currentFilePath đã có trailing backslash từ browseFiles()
     let filePath = currentFilePath + fileName;
     
-    showToast("Downloading " + fileName + "...", "info");
+    // Hiện toast persistent (không tự động mất)
+    if (downloadingToast) hideToast(downloadingToast);
+    downloadingToast = showToast("Downloading " + fileName + "...", "info", true);
     pendingFileDownload = fileName;
     
-    ws.send("CMD|FILE");
-    isInSubMenu = true;
-    setTimeout(() => {
+    // Kiểm tra xem đã ở trong FILE menu chưa
+    if (!isInSubMenu) {
+        ws.send("CMD|FILE");
+        isInSubMenu = true;
+        setTimeout(() => {
+            ws.send("CMD|DOWNLOAD");
+            setTimeout(() => ws.send("CMD|" + filePath), 100);
+        }, 200);
+    } else {
+        // Đã ở trong FILE menu rồi, gửi lệnh trực tiếp
         ws.send("CMD|DOWNLOAD");
         setTimeout(() => ws.send("CMD|" + filePath), 100);
-    }, 200);
+    }
 }
 
 function handleFileDownload(base64Data) {
-    if (!pendingFileDownload) return;
-    
-    const binaryString = atob(base64Data);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-        bytes[i] = binaryString.charCodeAt(i);
+    if (!pendingFileDownload) {
+        console.error("[DOWNLOAD] No pending download!");
+        return;
     }
     
-    const blob = new Blob([bytes]);
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = pendingFileDownload;
-    link.click();
-    URL.revokeObjectURL(url);
+    console.log("[DOWNLOAD] Starting download for:", pendingFileDownload);
+    console.log("[DOWNLOAD] Base64 length:", base64Data.length);
     
-    showToast("Downloaded: " + pendingFileDownload, "success");
-    pendingFileDownload = null;
+    try {
+        const binaryString = atob(base64Data);
+        console.log("[DOWNLOAD] Decoded binary length:", binaryString.length);
+        
+        const bytes = new Uint8Array(binaryString.length);
+        for (let i = 0; i < binaryString.length; i++) {
+            bytes[i] = binaryString.charCodeAt(i);
+        }
+        
+        console.log("[DOWNLOAD] Created Uint8Array, size:", bytes.length);
+        
+        const blob = new Blob([bytes]);
+        console.log("[DOWNLOAD] Created Blob, size:", blob.size);
+        
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = pendingFileDownload;
+        link.click();
+        URL.revokeObjectURL(url);
+        
+        console.log("[DOWNLOAD] Download triggered successfully");
+        
+        // Ẩn toast đang downloading và hiện toast success
+        if (downloadingToast) {
+            hideToast(downloadingToast);
+            downloadingToast = null;
+        }
+        showToast("Downloaded: " + pendingFileDownload, "success");
+        pendingFileDownload = null;
+    } catch (error) {
+        console.error("[DOWNLOAD] Error:", error);
+        if (downloadingToast) {
+            hideToast(downloadingToast);
+            downloadingToast = null;
+        }
+        showToast("Download failed: " + error.message, "error");
+        pendingFileDownload = null;
+    }
 }
 
 function formatFileSize(bytes) {

