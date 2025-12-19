@@ -1014,6 +1014,17 @@ void webcam()
     }
 }
 
+static wstring toWide(const string& str) {
+    if (str.empty()) return wstring();
+    int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
+    if (size_needed <= 0) { 
+        size_needed = MultiByteToWideChar(CP_ACP, 0, &str[0], (int)str.size(), NULL, 0);
+    }
+    wstring wstrTo(size_needed, 0);
+    MultiByteToWideChar(size_needed > 0 ? CP_UTF8 : CP_ACP, 0, &str[0], (int)str.size(), &wstrTo[0], size_needed);
+    return wstrTo;
+}
+
 void fileManagement()
 {
     string cmd;
@@ -1022,35 +1033,33 @@ void fileManagement()
     {
         receiveSignal(cmd);
 
-        if (cmd == "LIST")
-        {
-            // Nhận đường dẫn
+        if (cmd == "LIST") {
             string path;
-            receiveSignal(path);
-
+            receiveSignal(path); // Nhận path từ client (dạng string)
             sendLine("FILELIST");
 
-            // Tìm tất cả file và thư mục
-            string searchPath = path + "*";
-            WIN32_FIND_DATAA findData;
-            HANDLE hFind = FindFirstFileA(searchPath.c_str(), &findData);
+            // Chuyển path sang Unicode và thêm "*"
+            wstring wPath = toWide(path);
+            if (!wPath.empty() && wPath.back() != L'\\') wPath += L"\\";
+            wstring wSearchPath = wPath + L"*";
 
-            if (hFind != INVALID_HANDLE_VALUE)
-            {
-                do
-                {
-                    string name = findData.cFileName;
-                    if (name == "." || name == "..")
-                        continue;
+            WIN32_FIND_DATAW findData; // Dùng bản W
+            HANDLE hFind = FindFirstFileW(wSearchPath.c_str(), &findData); // Dùng bản W
 
+            if (hFind != INVALID_HANDLE_VALUE) {
+                do {
+                    wstring wName = findData.cFileName;
+                    if (wName == L"." || wName == L"..") continue;
+
+                    // Chuyển tên file từ Unicode (wchar_t) sang UTF-8 để gửi qua Socket
+                    string name = toUtf8(wName.c_str()); // Dùng hàm toUtf8(const wchar_t*) đã có
+                    
                     string type = (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? "DIR" : "FILE";
                     ULONGLONG fileSize = ((ULONGLONG)findData.nFileSizeHigh << 32) | findData.nFileSizeLow;
 
-                    // Gửi: TYPE|NAME|SIZE
                     string line = type + "|" + name + "|" + to_string(fileSize);
-                    sendLine(line);
-                } while (FindNextFileA(hFind, &findData));
-
+                    sendLine(line); // Gửi chuỗi đã là UTF-8 chuẩn
+                } while (FindNextFileW(hFind, &findData));
                 FindClose(hFind);
             }
         }
