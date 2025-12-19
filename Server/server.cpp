@@ -509,16 +509,16 @@ void processManagement()
             HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
             if (hSnapshot != INVALID_HANDLE_VALUE)
             {
-                PROCESSENTRY32 pe32;
-                pe32.dwSize = sizeof(PROCESSENTRY32);
+                PROCESSENTRY32W pe32;
+                pe32.dwSize = sizeof(PROCESSENTRY32W);
 
-                vector<PROCESSENTRY32> processes;
-                if (Process32First(hSnapshot, &pe32))
+                vector<PROCESSENTRY32W> processes;
+                if (Process32FirstW(hSnapshot, &pe32))
                 {
                     do
                     {
                         processes.push_back(pe32);
-                    } while (Process32Next(hSnapshot, &pe32));
+                    } while (Process32NextW(hSnapshot, &pe32));
                 }
                 CloseHandle(hSnapshot);
 
@@ -639,15 +639,15 @@ struct AppInfo
 BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
 {
     vector<AppInfo> *pApps = (vector<AppInfo> *)lParam;
-    if (IsWindowVisible(hwnd) && GetWindowTextLength(hwnd) > 0)
+    if (IsWindowVisible(hwnd) && GetWindowTextLengthW(hwnd) > 0)
     {
         DWORD pid;
         GetWindowThreadProcessId(hwnd, &pid);
         if (pid == GetCurrentProcessId())
             return TRUE;
 
-        char title[1024];
-        GetWindowTextA(hwnd, title, sizeof(title));
+        wchar_t title[1024];
+        GetWindowTextW(hwnd, title, sizeof(title) / sizeof(wchar_t));
 
         string exeName = "Unknown";
         DWORD threads = 0;
@@ -655,10 +655,18 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
         HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pid);
         if (hProcess)
         {
-            char buffer[MAX_PATH];
-            if (GetModuleBaseNameA(hProcess, NULL, buffer, MAX_PATH))
+            wchar_t buffer[MAX_PATH];
+            if (GetModuleBaseNameW(hProcess, NULL, buffer, MAX_PATH))
             {
-                exeName = buffer;
+                exeName = toUtf8(buffer);
+            }
+            else
+            {
+                char ansiBuffer[MAX_PATH];
+                if (GetModuleBaseNameA(hProcess, NULL, ansiBuffer, MAX_PATH))
+                {
+                    exeName = string(ansiBuffer);
+                }
             }
             CloseHandle(hProcess);
         }
@@ -666,9 +674,9 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
         HANDLE hSnapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
         if (hSnapshot != INVALID_HANDLE_VALUE)
         {
-            PROCESSENTRY32 pe32;
-            pe32.dwSize = sizeof(PROCESSENTRY32);
-            if (Process32First(hSnapshot, &pe32))
+            PROCESSENTRY32W pe32;
+            pe32.dwSize = sizeof(PROCESSENTRY32W);
+            if (Process32FirstW(hSnapshot, &pe32))
             {
                 do
                 {
@@ -677,14 +685,14 @@ BOOL CALLBACK EnumWindowsProc(HWND hwnd, LPARAM lParam)
                         threads = pe32.cntThreads;
                         break;
                     }
-                } while (Process32Next(hSnapshot, &pe32));
+                } while (Process32NextW(hSnapshot, &pe32));
             }
             CloseHandle(hSnapshot);
         }
 
         if (GetParent(hwnd) == NULL)
         {
-            pApps->push_back({string(title), exeName, pid, threads});
+            pApps->push_back({toUtf8(title), exeName, pid, threads});
         }
     }
     return TRUE;
@@ -821,7 +829,7 @@ void applicationManagement()
                         HINSTANCE h = ShellExecuteA(NULL, "open", pathExec.c_str(), NULL, NULL, SW_SHOWNORMAL);
                         if ((INT_PTR)h > 32)
                         {
-                            sendLine("Application opened at: " + pathExec);
+                            sendLine("Application opened successfully at: " + pathExec);
                         }
                         else
                         {
@@ -833,7 +841,7 @@ void applicationManagement()
                         HINSTANCE h = ShellExecuteA(NULL, "open", inputName.c_str(), NULL, NULL, SW_SHOWNORMAL);
                         if ((INT_PTR)h > 32)
                         {
-                            sendLine("Opened via Windows Run command");
+                            sendLine("Application opened successfully via Windows Run command");
                         }
                         else
                         {

@@ -92,7 +92,9 @@ function handleServerMessage(msg) {
             const isError = data.toLowerCase().includes("error") || data.includes("Unable");
             showToast(data.trim(), isError ? "error" : "success");
             if (parsingMode === 'APP' || parsingMode === 'PROCESS') {
-                setTimeout(() => refreshListAfterAction(), 300);
+                let delayTime = 300;
+                if (currentAction && currentAction.toLowerCase().includes('start')) delayTime = 1500;
+                setTimeout(() => refreshListAfterAction(), delayTime);
             }
             return;
         }
