@@ -91,7 +91,9 @@ function handleServerMessage(msg) {
         if (data.includes("successfully") || data.includes("Error:") || data.includes("Unable to")) {
             const isError = data.toLowerCase().includes("error") || data.includes("Unable");
             showToast(data.trim(), isError ? "error" : "success");
-            setTimeout(() => refreshListAfterAction(), 300);
+            if (parsingMode === 'APP' || parsingMode === 'PROCESS') {
+                setTimeout(() => refreshListAfterAction(), 300);
+            }
             return;
         }
         if (currentWindow === 3) {
