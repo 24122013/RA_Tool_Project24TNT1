@@ -1,7 +1,7 @@
 # RA Tool – Remote Administration Tool
 
 > **Mục đích học tập – nghiên cứu**
-> Dự án mô phỏng hệ thống quản trị & điều khiển máy tính từ xa (Remote Administration Tool – RAT) theo mô hình **Server – Client**, phục vụ đồ án môn học **Mạng Máy Tính**
+> Dự án mô phỏng hệ thống quản trị & điều khiển máy tính từ xa (Remote Administration Tool – RAT) thông qua giao diện Web theo mô hình **Server – Client**, phục vụ đồ án môn học **Mạng Máy Tính**
 
 ## ✨ Tác giả
 
@@ -29,9 +29,10 @@ Dự án được viết chủ yếu bằng **C++**, chạy trên **Windows**, s
 3. [Hướng dẫn build](#-hướng-dẫn-build)
 4. [Chạy Server](#-chạy-server)
 5. [Chạy Client](#-chạy-client)
-6. [Mở port & cấu hình Firewall](#-mở-port--cấu-hình-firewall)
-7. [Hướng dẫn sử dụng & chức năng](#-hướng-dẫn-sử-dụng--chức-năng)
-8. [Lưu ý bảo mật & pháp lý](#-lưu-ý-bảo-mật--pháp-lý)
+6. [Chạy Web](#-chạy-web)
+7. [Mở port & cấu hình Firewall](#-mở-port--cấu-hình-firewall)
+8. [Hướng dẫn sử dụng & chức năng](#-hướng-dẫn-sử-dụng--chức-năng)
+9. [Lưu ý bảo mật & pháp lý](#-lưu-ý-bảo-mật--pháp-lý)
 
 ---
 
@@ -49,6 +50,7 @@ Dự án được viết chủ yếu bằng **C++**, chạy trên **Windows**, s
 * C/C++ cơ bản
 * Socket TCP/IP
 * Command line
+* Web Socket
 
 ---
 
@@ -59,7 +61,7 @@ RA_Tool_Project24TNT1/
 │
 ├── Server/          # Mã nguồn Server
 ├── Client/          # Mã nguồn Client
-├── Web/             # (Nếu có) giao diện Web
+├── Web/             # Giao diện Web
 ├── README.md
 └── .gitignore
 ```
@@ -83,19 +85,16 @@ cd RA_Tool_Project24TNT1
 
 ```bash
 cd Server
-g++ server.cpp -o server -lws2_32
+g++ server.cpp -o .\server.exe -lws2_32 -lgdiplus -lvfw32 -lpsapi -lshell32 -ladvapi32 -lole32 -lgdi32 -lcrypt32 -luser32
 ```
 
 #### Build Client
 
 ```bash
 cd Client
-g++ client.cpp -o client -lws2_32
+g++ .\client.cpp -o .\client.exe -lws2_32 -lcrypt32
+
 ```
-
-📌 `-lws2_32` là bắt buộc cho lập trình socket trên Windows.
-
----
 
 ### 3️⃣ Build bằng **Visual Studio** (tuỳ chọn)
 
@@ -117,12 +116,9 @@ server.exe
 
 Server sẽ:
 
-* Mở port lắng nghe (ví dụ: `12345`)
+* Mở port lắng nghe (5656)
 * Chờ client kết nối
 
-📌 **Ghi nhớ port đang dùng để client kết nối**.
-
----
 
 ## ▶️ Chạy Client
 
@@ -130,16 +126,22 @@ Trên máy Client:
 
 ```bash
 cd Client
-client.exe <IP_SERVER> <PORT>
+client.exe 
 ```
 
 Ví dụ:
 
 ```bash
-client.exe 192.168.1.10 12345
+client.exe 
 ```
 
----
+## ▶️ Mở Web
+
+```bash
+cd Web
+index.html
+```
+
 
 ## 🔓 Mở port & cấu hình Firewall
 
@@ -149,7 +151,7 @@ client.exe 192.168.1.10 12345
 2. Chọn **Advanced settings**
 3. **Inbound Rules → New Rule**
 4. Chọn **Port** → TCP
-5. Nhập port (ví dụ `12345`)
+5. Nhập port (5656)
 6. Chọn **Allow the connection**
 7. Apply cho Domain / Private / Public
 
@@ -169,30 +171,32 @@ netsh advfirewall set allprofiles state on
 
 ---
 
-### 🔹 Mở port trên Router (nếu khác mạng LAN)
-
-* Cấu hình **Port Forwarding**
-* Forward port từ **Public IP → IP máy Server**
-
----
-
 ## ⚙️ Hướng dẫn sử dụng & chức năng
-
-(Tuỳ theo code hiện tại của project)
 
 Ví dụ:
 
 * Client kết nối đến Server
+* Web HTML kết nối với Client thông qua Web Socket
+* Web thông qua Client ra lệnh cho Server
 * Server nhận lệnh
 * Thực thi lệnh
-* Gửi kết quả về Client
+* Gửi kết quả về Web thông qua Client
 
-| Chức năng | Mô tả                         |
-| --------- | ----------------------------- |
-| Kết nối   | Client kết nối TCP tới Server |
-| Gửi lệnh  | Client gửi chuỗi lệnh         |
-| Thực thi  | Server xử lý lệnh             |
-| Phản hồi  | Server gửi kết quả            |
+| Thành phần| Vai trò                    |
+|-----------|----------------------------|
+| Web       | Gửi lệnh, hiển thị kết quả |
+| Client    | Trung gian WebSocket ↔ TCP |
+| Server    | Thực thi lệnh              |
+
+
+| Chức năng        | Mô tả                                                           |
+|------------------|-----------------------------------------------------------------|
+| Kết nối Server   | Client thiết lập kết nối TCP tới Server                         |
+| Kết nối Web      | Web HTML kết nối tới Client thông qua WebSocket                 |
+| Gửi lệnh         | Web gửi lệnh điều khiển đến Client                              |
+| Chuyển tiếp lệnh | Client chuyển tiếp lệnh từ Web đến Server                       |
+| Thực thi         | Server nhận và thực thi lệnh                                    |
+| Phản hồi         | Server gửi kết quả về Client, Client chuyển tiếp kết quả về Web |
 
 ---
 
@@ -203,7 +207,3 @@ Ví dụ:
 * Không sử dụng trái phép trên máy người khác
 * Không triển khai trên môi trường thật
 * Không chịu trách nhiệm cho hành vi lạm dụng
-
-
-
-
