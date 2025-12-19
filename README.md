@@ -1,19 +1,24 @@
 # RA Tool – Remote Administration Tool
 
 > **Mục đích học tập – nghiên cứu**
-> Dự án mô phỏng hệ thống quản trị & điều khiển máy tính từ xa (Remote Administration Tool – RAT) theo mô hình **Server – Client**, phục vụ đồ án/ học phần CNTT.
+> Dự án mô phỏng hệ thống quản trị & điều khiển máy tính từ xa (Remote Administration Tool – RAT) theo mô hình **Server – Client**, phục vụ đồ án môn học **Mạng Máy Tính**
 
----
+## ✨ Tác giả
+
+* Nguyễn Đức Tâm: 24122013
+* Nguyễn Tuấn Lâm: 24122006
+* Nguyễn Nguyễn Trâm Anh: 24122027
+
 
 ## 📌 Giới thiệu
 
-**RA Tool** là một hệ thống cho phép:
+**RAT** là một hệ thống cho phép:
 
 * Máy **Server** lắng nghe kết nối
 * Máy **Client** kết nối đến Server để gửi/nhận lệnh
 * Thực hiện các chức năng quản trị từ xa (theo phạm vi code của dự án)
 
-Dự án được viết chủ yếu bằng **C/C++**, chạy trên **Windows**, sử dụng **socket TCP/UDP**.
+Dự án được viết chủ yếu bằng **C++**, chạy trên **Windows**, sử dụng **socket TCP/UDP**.
 
 ---
 
@@ -199,15 +204,6 @@ Ví dụ:
 * Không triển khai trên môi trường thật
 * Không chịu trách nhiệm cho hành vi lạm dụng
 
----
 
-## 📄 License
 
-Dự án phục vụ **đồ án học tập**, không dùng cho mục đích thương mại.
 
----
-
-## ✨ Tác giả
-
-* Sinh viên lớp **24TNT1**
-* Trường / Môn học: *(bổ sung nếu cần)*
