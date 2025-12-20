@@ -19,6 +19,9 @@ let pendingFileDownload = null;
 let availableDrives = [];
 let downloadingToast = null;
 
+// Connection timeout
+let connectionTimer = null;
+
 // --- WEBSOCKET ---
 function initWebSocket() {
     ws = new WebSocket("ws://localhost:8080");
@@ -58,13 +61,19 @@ function handleServerMessage(msg) {
             option.text = msg.ip;
             option.value = msg.ip;
             select.add(option);
-            if (select.options.length === 1 || select.options[0].disabled) {
-                if(select.options[0].disabled) select.remove(0);
-                select.value = msg.ip;
+            // Don't auto-select, just remove the placeholder if this is first server
+            if (select.options.length === 2 && select.options[0].disabled) {
+                // Keep placeholder but don't remove it
             }
         }
     } 
     else if (msg.type === "STATUS") {
+        // Clear connection timeout when status received
+        if (connectionTimer) {
+            clearTimeout(connectionTimer);
+            connectionTimer = null;
+        }
+        
         if (msg.connected) {
             document.getElementById('homePage').classList.add('hidden');
             setTimeout(() => {
@@ -78,7 +87,14 @@ function handleServerMessage(msg) {
         }
     } 
     else if (msg.type === "ERROR") {
+        // Clear connection timeout on error
+        if (connectionTimer) {
+            clearTimeout(connectionTimer);
+            connectionTimer = null;
+        }
         showToast(msg.msg, "error");
+        // Send DISCONNECT immediately when connection fails
+        ws.send('DISCONNECT|');
     }
     else if (msg.type === "CHAT") {
         const data = msg.data;
@@ -346,12 +362,51 @@ function submitInput() {
 
 // --- CORE FUNCTIONS ---
 function connect() {
-    const ip = document.getElementById('serverSelect').value;
-    if (!ip) return showToast('Select a server first', 'warning');
-    ws.send(`CONNECT|${ip}`);
+    const manualIP = document.getElementById('manualIP').value.trim();
+    const selectedIP = document.getElementById('serverSelect').value;
+    
+    let ip = manualIP || selectedIP;
+    
+    if (!ip) {
+        return showToast('Please select a server or enter an IP address', 'warning');
+    }
+    
+    // Simple IP validation
+    const ipPattern = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+    if (!ipPattern.test(ip)) {
+        return showToast('Invalid IP address format', 'error');
+    }
+    
+    // Clear existing timeout if any
+    if (connectionTimer) {
+        clearTimeout(connectionTimer);
+        connectionTimer = null;
+    }
+    
+    // Send disconnect first to ensure clean state
+    ws.send('DISCONNECT|');
+    
+    // Wait a bit for disconnect to complete, then connect
+    setTimeout(() => {
+        // Set 2.2 second timeout (slightly longer than server timeout of 2s)
+        connectionTimer = setTimeout(() => {
+            showToast('Connection timeout. Server not responding.', 'error');
+            ws.send('DISCONNECT|');
+            connectionTimer = null;
+        }, 2200);
+        
+        ws.send(`CONNECT|${ip}`);
+        showToast('Connecting to ' + ip + '...', 'info');
+    }, 150);
 }
 
 function disconnect() {
+    // Clear connection timeout if exists
+    if (connectionTimer) {
+        clearTimeout(connectionTimer);
+        connectionTimer = null;
+    }
+    
     if(isInSubMenu) ws.send("CMD|QUIT"); 
     isInSubMenu = false;
     setTimeout(() => ws.send("DISCONNECT|"), 200);

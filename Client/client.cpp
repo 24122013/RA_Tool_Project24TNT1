@@ -100,7 +100,7 @@ void sendWebFrame(string message)
         return;
 
     vector<unsigned char> frame;
-    frame.push_back(0x81); 
+    frame.push_back(0x81);
 
     if (message.length() <= 125)
     {
@@ -257,7 +257,7 @@ void ratReceiverThread()
         {
             if (line.rfind("CHAT:", 0) == 0)
             {
-                string content = line.substr(5); 
+                string content = line.substr(5);
                 string safeContent = escapeJsonString(content);
                 string json = "{\"type\":\"CHAT\", \"data\":\"" + safeContent + "\"}";
                 sendWebFrame(json);
@@ -288,20 +288,60 @@ void handleWebCommand(string cmd)
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
         }
         ratSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+
+        // Set non-blocking mode for faster timeout
+        u_long mode = 1;
+        ioctlsocket(ratSocket, FIONBIO, &mode);
+
         sockaddr_in addr;
         addr.sin_family = AF_INET;
         inet_pton(AF_INET, data.c_str(), &addr.sin_addr);
         addr.sin_port = htons(5656);
 
-        if (connect(ratSocket, (sockaddr *)&addr, sizeof(addr)) == 0)
+        connect(ratSocket, (sockaddr *)&addr, sizeof(addr));
+
+        // Wait for connection with timeout using select
+        fd_set writefds;
+        FD_ZERO(&writefds);
+        FD_SET(ratSocket, &writefds);
+
+        timeval timeout;
+        timeout.tv_sec = 2; // 2 seconds
+        timeout.tv_usec = 0;
+
+        int result = select(0, NULL, &writefds, NULL, &timeout);
+
+        if (result > 0)
         {
-            isConnectedToRat = true;
-            sendWebFrame("{\"type\":\"STATUS\", \"connected\":true}");
-            thread(ratReceiverThread).detach();
+            // Check if connection succeeded
+            int error = 0;
+            int len = sizeof(error);
+            getsockopt(ratSocket, SOL_SOCKET, SO_ERROR, (char *)&error, &len);
+
+            if (error == 0)
+            {
+                // Set back to blocking mode
+                mode = 0;
+                ioctlsocket(ratSocket, FIONBIO, &mode);
+
+                isConnectedToRat = true;
+                sendWebFrame("{\"type\":\"STATUS\", \"connected\":true}");
+                thread(ratReceiverThread).detach();
+            }
+            else
+            {
+                closesocket(ratSocket);
+                ratSocket = INVALID_SOCKET;
+                string msg = "{\"type\":\"ERROR\", \"msg\":\"Connection failed\"}";
+                sendWebFrame(msg);
+            }
         }
         else
         {
-            string msg = "{\"type\":\"ERROR\", \"msg\":\"Connection Failed: " + to_string(WSAGetLastError()) + "\"}";
+            // Timeout or error
+            closesocket(ratSocket);
+            ratSocket = INVALID_SOCKET;
+            string msg = "{\"type\":\"ERROR\", \"msg\":\"Connection timeout\"}";
             sendWebFrame(msg);
         }
     }
@@ -389,7 +429,7 @@ void webSocketServer()
                     else if (payloadLen == 127)
                     {
                         break;
-                    } 
+                    }
 
                     unsigned char maskKey[4];
                     if (masked)
