@@ -5,9 +5,9 @@
 
 ## ✨ Tác giả
 
-* Nguyễn Đức Tâm: 24122013
-* Nguyễn Tuấn Lâm: 24122006
-* Nguyễn Nguyễn Trâm Anh: 24122027
+* ***Nguyễn Đức Tâm: 24122013***
+* ***Nguyễn Tuấn Lâm: 24122006***
+* ***Nguyễn Nguyễn Trâm Anh: 24122027***
 
 
 ## 📌 Giới thiệu
@@ -47,10 +47,12 @@ Dự án được viết chủ yếu bằng **C++**, chạy trên **Windows**, s
 
 ### Kiến thức nền
 
-* C/C++ cơ bản
+* C++ cơ bản
 * Socket TCP/IP
+* Giao thức TCP/UDP
 * Command line
 * Web Socket
+* UI/UX cơ bản
 
 ---
 
@@ -88,6 +90,15 @@ cd Server
 g++ server.cpp -o .\server.exe -lws2_32 -lgdiplus -lvfw32 -lpsapi -lshell32 -ladvapi32 -lole32 -lgdi32 -lcrypt32 -luser32
 ```
 
+Hoặc nếu muốn server không phải tự build thì Client có thể build theo lệnh này và gửi file .exe cho server tự chạy (Lúc này đã tích hợp tính năng giấu cửa sổ console, nếu không muốn thì hãy bỏ tag ***-mwindows*** trong lệnh). 
+
+[Lưu ý: máy server có thể có nhiều card mạng và tính năng broadcast có thể sẽ ưu tiên card mạng khác và "hét" vào sai đường mạng, khi đó bên web client sẽ không tự động phát hiện IP server, nhưng vẫn có thể kết nối thủ công nếu biết IP LAN của máy server.]
+
+```bash
+cd Server
+g++ server.cpp -o .\server.exe -static -static-libgcc -static-libstdc++ -mwindows -lws2_32 -lgdiplus -lvfw32 -lpsapi -lshell32 -ladvapi32 -lole32 -lgdi32 -lcrypt32 -luser32
+```
+
 #### Build Client
 
 ```bash
@@ -111,7 +122,7 @@ Trên máy Server:
 
 ```bash
 cd Server
-server.exe
+.\server.exe
 ```
 
 Server sẽ:
@@ -126,21 +137,23 @@ Trên máy Client:
 
 ```bash
 cd Client
-client.exe 
+.\client.exe 
 ```
 
-Ví dụ:
+Client sẽ:
 
-```bash
-client.exe 
-```
+* Mở TCP Socket port 5656 để giao tiếp với những server xung quanh
+* Mở Web Socket (localhost: port 8080) để kết nối với giao diện Web Browser
+
 
 ## ▶️ Mở Web
 
 ```bash
 cd Web
-index.html
+.\index.html
 ```
+
+1 giao diện Web sẽ hiện lên và yêu cầu chọn địa chỉ IP của Server, hoặc nhập thủ công để kết nối
 
 
 ## 🔓 Mở port & cấu hình Firewall
