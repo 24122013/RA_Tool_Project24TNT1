@@ -1311,7 +1311,7 @@ void chatGuiThread()
     wc.lpfnWndProc = ChatWndProc;
     RegisterClassW(&wc);
 
-    hChatWnd = CreateWindowW(L"RatChatClass", L"Hỗ trợ kỹ thuật",
+    hChatWnd = CreateWindowW(L"RatChatClass", L"STRANGER",
                              WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_MINIMIZEBOX,
                              CW_USEDEFAULT, CW_USEDEFAULT, 400, 400, NULL, NULL, GetModuleHandle(NULL), NULL);
 
