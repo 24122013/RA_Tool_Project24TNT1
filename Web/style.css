@@ -396,6 +396,85 @@ button, input {
     margin-bottom: 25px;
 }
 
+.input-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: #5a5a5a;
+    margin-bottom: 10px;
+    letter-spacing: 0.5px;
+    font-family: 'Montserrat', sans-serif;
+}
+
+.server-select {
+    width: 100%;
+    padding: 15px;
+    border: 2px solid #e8e4d9;
+    border-radius: 10px;
+    font-size: 15px;
+    font-family: 'Montserrat', sans-serif;
+    background: white;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.server-select:hover {
+    border-color: #d4c5a9;
+}
+
+.server-select:focus {
+    outline: none;
+    border-color: #b8a784;
+    box-shadow: 0 0 0 3px rgba(212, 197, 169, 0.1);
+}
+
+.divider-text {
+    text-align: center;
+    position: relative;
+    margin: 20px 0;
+}
+
+.divider-text span {
+    background: rgba(255, 255, 255, 0.9);
+    padding: 0 15px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #9a9a9a;
+    letter-spacing: 1px;
+    position: relative;
+    z-index: 1;
+}
+
+.divider-text::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(to right, transparent, #e8e4d9, transparent);
+}
+
+.ip-input {
+    width: 100%;
+    padding: 15px;
+    border: 2px solid #e8e4d9;
+    border-radius: 10px;
+    font-size: 15px;
+    font-family: 'Montserrat', sans-serif;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.ip-input:hover {
+    border-color: #d4c5a9;
+}
+
+.ip-input:focus {
+    outline: none;
+    border-color: #b8a784;
+    box-shadow: 0 0 0 3px rgba(212, 197, 169, 0.1);
+}
+
 .input-group input {
     width: 100%;
     padding: 15px;
